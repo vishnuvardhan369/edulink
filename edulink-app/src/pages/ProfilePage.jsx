@@ -61,7 +61,7 @@ export default function ProfilePage({ viewingProfileId, currentUserData, navigat
 
     const handleConnection = async (action) => {
         try {
-            const response = await fetch(`http://localhost:4000/api/users/${viewingProfileId}/${action}`, {
+            const response = await fetch(`https://edulink-g0gqgxhhezfjbzg4.southindia-01.azurewebsites.net/api/users/${viewingProfileId}/${action}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ currentUserId: currentUser.uid })
@@ -79,7 +79,7 @@ export default function ProfilePage({ viewingProfileId, currentUserData, navigat
         if (!file) return;
         setUploading(true);
         try {
-            const response = await fetch('http://localhost:4000/api/generate-upload-url', {
+            const response = await fetch('https://edulink-g0gqgxhhezfjbzg4.southindia-01.azurewebsites.net/api/generate-upload-url', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ fileName: file.name })
