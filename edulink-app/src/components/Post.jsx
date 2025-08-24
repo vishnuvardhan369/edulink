@@ -75,6 +75,7 @@ export default function Post({ post, onPostUpdate, onPostDelete, navigateToProfi
             await fetch(`https://edulink-g0gqgxhhezfjbzg4.southindia-01.azurewebsites.net/api/posts/${post.id}/like`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
                 body: JSON.stringify({ userId: currentUser.uid })
             });
         } catch (error) {
@@ -91,6 +92,7 @@ export default function Post({ post, onPostUpdate, onPostDelete, navigateToProfi
             const response = await fetch(`https://edulink-g0gqgxhhezfjbzg4.southindia-01.azurewebsites.net/api/posts/${post.id}/comment`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
                 body: JSON.stringify({ userId: currentUser.uid, text: textToSubmit })
             });
             if (!response.ok) throw new Error("Failed to post comment");
@@ -125,6 +127,7 @@ export default function Post({ post, onPostUpdate, onPostDelete, navigateToProfi
             const response = await fetch(`https://edulink-g0gqgxhhezfjbzg4.southindia-01.azurewebsites.net/api/posts/${post.id}`, {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
                 body: JSON.stringify({ userId: currentUser.uid })
             });
             if (!response.ok) {
