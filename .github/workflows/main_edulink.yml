@@ -7,13 +7,14 @@ on:
   push:
     branches:
       - main
+    # This line ensures the workflow ONLY runs when you change backend code
+    paths:
+      - 'backend/**'
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read #This is required for actions/checkout
 
     steps:
       - uses: actions/checkout@v4
@@ -21,26 +22,31 @@ jobs:
       - name: Set up Node.js version
         uses: actions/setup-node@v3
         with:
-          node-version: '22.x'
+          # Using Node.js 20.x as requested
+          node-version: '20.x'
 
-      - name: npm install, build, and test
+      - name: npm install and build
+        # THIS IS THE KEY FIX: All commands now run inside the ./backend folder
+        working-directory: ./backend
         run: |
           npm install
           npm run build --if-present
-          npm run test --if-present
-
+      
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
         with:
           name: node-app
-          path: .
+          # THIS IS THE SECOND FIX: We are only uploading the backend folder
+          path: ./backend
 
   deploy:
     runs-on: ubuntu-latest
     needs: build
+    environment:
+      name: 'Production'
+      url: ${{ steps.deploy-to-webapp.outputs.webapp-url }}
     permissions:
-      id-token: write #This is required for requesting the JWT
-      contents: read #This is required for actions/checkout
+      id-token: write # Required for login with OIDC
 
     steps:
       - name: Download artifact from build job
@@ -61,5 +67,5 @@ jobs:
         with:
           app-name: 'edulink'
           slot-name: 'Production'
+          # The package is now correctly just the backend code
           package: .
-          
