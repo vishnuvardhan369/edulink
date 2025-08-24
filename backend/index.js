@@ -6,9 +6,11 @@ const { BlobServiceClient, StorageSharedKeyCredential, BlobSASPermissions, gener
 const admin = require('firebase-admin');
 
 // --- Initialize Firebase Admin ---
-const serviceAccount = require('./firebase-service-account-key.json');
+const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+
 admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
 const db = admin.firestore();
+
 
 // --- Express Setup ---
 const app = express();
