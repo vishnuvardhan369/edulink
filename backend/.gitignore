@@ -1,0 +1,8 @@
+# Ignore environment variables file
+.env
+
+# Ignore node_modules folder
+node_modules
+
+# firebase service key
+firebase-service-account-key.json
