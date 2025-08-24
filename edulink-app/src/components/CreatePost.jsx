@@ -42,7 +42,7 @@ export default function CreatePost({ onPostCreated }) {
 
             if (imageFiles.length > 0) {
                 const uploadPromises = imageFiles.map(async (file) => {
-                    const urlResponse = await fetch('http://localhost:4000/api/generate-post-upload-url', {
+                    const urlResponse = await fetch('https://edulink-g0gqgxhhezfjbzg4.southindia-01.azurewebsites.net/api/generate-post-upload-url', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ fileName: file.name, fileType: file.type })
@@ -69,7 +69,7 @@ export default function CreatePost({ onPostCreated }) {
                 imageUrls: uploadedImageUrls
             };
 
-            const postResponse = await fetch('http://localhost:4000/api/posts', {
+            const postResponse = await fetch('https://edulink-g0gqgxhhezfjbzg4.southindia-01.azurewebsites.net/api/posts', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(postData)
