@@ -46,7 +46,7 @@ export default function ChatListPage({ navigateToChat, navigateToHome }) {
     React.useEffect(() => {
         const fetchChats = async () => {
             try {
-                const response = await fetch(`http://localhost:4000/api/users/${currentUser.uid}/chats`);
+                const response = await fetch(`https://edulink-g0gqgxhhezfjbzg4.southindia-01.azurewebsites.net/api/users/${currentUser.uid}/chats`);
                 const data = await response.json();
                 setChats(data);
             } catch (error) {
