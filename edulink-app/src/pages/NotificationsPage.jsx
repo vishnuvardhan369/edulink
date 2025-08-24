@@ -13,7 +13,7 @@ export default function NotificationsPage({ currentUserData, navigateToProfile, 
                 return;
             }
             try {
-                const response = await fetch('http://localhost:4000/api/users/notifications', {
+                const response = await fetch('https://edulink-g0gqgxhhezfjbzg4.southindia-01.azurewebsites.net/api/users/notifications', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ userIds: requestIds })
@@ -31,7 +31,7 @@ export default function NotificationsPage({ currentUserData, navigateToProfile, 
 
     const handleConnection = async (action, senderId) => {
         try {
-            const response = await fetch(`http://localhost:4000/api/users/${senderId}/${action}`, {
+            const response = await fetch(`https://edulink-g0gqgxhhezfjbzg4.southindia-01.azurewebsites.net/api/users/${senderId}/${action}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ currentUserId: auth.currentUser.uid })
