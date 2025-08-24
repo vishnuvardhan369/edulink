@@ -16,6 +16,7 @@ export default function NotificationsPage({ currentUserData, navigateToProfile, 
                 const response = await fetch('https://edulink-g0gqgxhhezfjbzg4.southindia-01.azurewebsites.net/api/users/notifications', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
                     body: JSON.stringify({ userIds: requestIds })
                 });
                 const data = await response.json();
@@ -34,6 +35,7 @@ export default function NotificationsPage({ currentUserData, navigateToProfile, 
             const response = await fetch(`https://edulink-g0gqgxhhezfjbzg4.southindia-01.azurewebsites.net/api/users/${senderId}/${action}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
                 body: JSON.stringify({ currentUserId: auth.currentUser.uid })
             });
             if (!response.ok) throw new Error(`Failed to ${action} request.`);
