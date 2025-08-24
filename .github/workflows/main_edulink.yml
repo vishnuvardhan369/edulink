@@ -23,7 +23,7 @@ jobs:
         uses: actions/setup-node@v3
         with:
           # Using Node.js 20.x as requested
-          node-version: '20.x'
+          node-version: '22.x'
 
       - name: npm install and build
         # THIS IS THE KEY FIX: All commands now run inside the ./backend folder
@@ -69,3 +69,4 @@ jobs:
           slot-name: 'Production'
           # The package is now correctly just the backend code
           package: .
+
