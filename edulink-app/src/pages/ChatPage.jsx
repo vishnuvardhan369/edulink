@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 import { auth } from '../App';
 
 // This should be a single, shared instance in a real app
-const socket = io('http://localhost:4000');
+const socket = io('https://edulink-g0gqgxhhezfjbzg4.southindia-01.azurewebsites.net');
 
 export default function ChatPage({ chatId, navigateToChatList }) {
     const [messages, setMessages] = React.useState([]);
@@ -16,7 +16,7 @@ export default function ChatPage({ chatId, navigateToChatList }) {
     React.useEffect(() => {
         const fetchMessages = async () => {
             try {
-                const response = await fetch(`http://localhost:4000/api/chats/${chatId}/messages`);
+                const response = await fetch(`https://edulink-g0gqgxhhezfjbzg4.southindia-01.azurewebsites.net/api/chats/${chatId}/messages`);
                 const data = await response.json();
                 setMessages(data);
             } catch (error) {
