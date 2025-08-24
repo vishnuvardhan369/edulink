@@ -44,7 +44,7 @@ export default function HomePage({ userData, onSignOut, navigateToProfile, navig
     const fetchPosts = async () => {
         if (posts.length === 0) setLoading(true); 
         try {
-            const response = await fetch('http://localhost:4000/api/posts');
+            const response = await fetch('https://edulink-g0gqgxhhezfjbzg4.southindia-01.azurewebsites.net/api/posts');
             if (!response.ok) throw new Error('Failed to fetch posts from server.');
             const data = await response.json();
             setPosts(data);
