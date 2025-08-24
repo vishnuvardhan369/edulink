@@ -60,7 +60,8 @@ jobs:
           client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_FB0E0CC13E3F42878E0E4C3F0AC79FB4 }}
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_BF92AE1DFD0F427BBE991E60F4B83262 }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_5DC2434BE8F24AF9BF8CDC896F3F1B9E }}
-
+          auth-type: 'OIDC'
+          audience: 'api://AzureADTokenExchange'
       - name: 'Deploy to Azure Web App'
         id: deploy-to-webapp
         uses: azure/webapps-deploy@v3
@@ -69,4 +70,5 @@ jobs:
           slot-name: 'Production'
           # The package is now correctly just the backend code
           package: .
+
 
