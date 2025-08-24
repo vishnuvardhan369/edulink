@@ -45,6 +45,7 @@ export default function CreatePost({ onPostCreated }) {
                     const urlResponse = await fetch('https://edulink-g0gqgxhhezfjbzg4.southindia-01.azurewebsites.net/api/generate-post-upload-url', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
+                        credentials: 'include',
                         body: JSON.stringify({ fileName: file.name, fileType: file.type })
                     });
                     if (!urlResponse.ok) throw new Error(`Failed to get upload URL for ${file.name}.`);
@@ -72,6 +73,7 @@ export default function CreatePost({ onPostCreated }) {
             const postResponse = await fetch('https://edulink-g0gqgxhhezfjbzg4.southindia-01.azurewebsites.net/api/posts', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
                 body: JSON.stringify(postData)
             });
             if (!postResponse.ok) throw new Error('Failed to create post on server.');
