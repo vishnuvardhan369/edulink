@@ -17,7 +17,7 @@
     "@azure/storage-blob": "latest",
     "cors": "latest",
     "dotenv": "latest",
-    "express": "latest",
+    "express": "^4.19.2",
     "firebase-admin": "latest"
-  }
+}
 }
