@@ -15,19 +15,17 @@ const db = admin.firestore();
 // --- Express Setup ---
 const app = express();
 const PORT = process.env.PORT;  // ✅ FIX: Use Azure PORT
+app.use(express.json());
 
 // ✅ Proper CORS setup
 app.use(cors({
-  origin: ["https://www.edulink.social"],   // frontend URL
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
-  credentials: true
+    origin: ["https://www.edulink.social"],  // frontend domain
+    methods: ["GET", "POST", "PUT", "DELETE"],
+    credentials: true
 }));
-
 // Handle preflight requests globally
 app.options('*', cors());
 
-app.use(express.json());
 
 // --- Azure Storage Setup ---
 const accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
