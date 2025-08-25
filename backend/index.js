@@ -23,7 +23,9 @@ app.use(cors({
     methods: ["GET", "POST", "PUT", "DELETE"],
     credentials: true
 }));
-app.use(express.json());
+// Handle preflight requests globally
+app.options('*', cors());
+
 
 // --- Azure Storage Setup ---
 const accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
