@@ -14,7 +14,7 @@ const db = admin.firestore();
 
 // --- Express Setup ---
 const app = express();
-const PORT = process.env.PORT || 4000;  // ✅ FIX: Use Azure PORT
+const PORT = process.env.PORT;  // ✅ FIX: Use Azure PORT
 app.use(express.json());
 
 // ✅ Proper CORS setup
