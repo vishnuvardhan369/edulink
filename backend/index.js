@@ -23,9 +23,7 @@ app.use(cors({
     methods: ["GET", "POST", "PUT", "DELETE"],
     credentials: true
 }));
-// Handle preflight requests globally
-app.options('*', cors());
-
+app.use(express.json());
 
 // --- Azure Storage Setup ---
 const accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
@@ -86,25 +84,18 @@ app.post('/api/posts', async (req, res) => {
     try {
         const { userId, description, imageUrls } = req.body;
         if (!userId || !description) return res.status(400).send({ error: 'userId and description are required.' });
-
         const newPost = {
             userId, description,
             imageUrls: imageUrls || [],
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
             likes: [], comments: []
         };
-
-        console.log("📩 New post request:", newPost);
-
         const postRef = await db.collection('posts').add(newPost);
-
         res.status(201).send({ message: 'Post created successfully', postId: postRef.id });
     } catch (error) {
-        console.error("🔥 Post creation error:", error);
-        res.status(500).send({ error: error.message || 'Failed to create post.' });
+        res.status(500).send({ error: 'Failed to create post.' });
     }
 });
-
 
 app.get('/api/posts', async (req, res) => {
     try {
