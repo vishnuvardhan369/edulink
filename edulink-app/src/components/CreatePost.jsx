@@ -14,13 +14,13 @@ export default function CreatePost({ onPostCreated }) {
         const newFiles = Array.from(e.target.files);
         if (newFiles.length === 0) return;
 
-        // **FIX**: Enforce 5-image limit
+        // Enforce 5-image limit
         if (imageFiles.length + newFiles.length > 5) {
             alert("You can only upload a maximum of 5 images per post.");
             return;
         }
 
-        // **FIX**: Append new files to the existing list
+        // Append new files to the existing list
         setImageFiles(prevFiles => [...prevFiles, ...newFiles]);
     };
     
@@ -42,10 +42,9 @@ export default function CreatePost({ onPostCreated }) {
 
             if (imageFiles.length > 0) {
                 const uploadPromises = imageFiles.map(async (file) => {
-                    const urlResponse = await fetch('https://edulink-g0gqgxhhezfjbzg4.southindia-01.azurewebsites.net/api/generate-post-upload-url', {
+                    const urlResponse = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:4000'}/api/generate-post-upload-url`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        credentials: 'include',
                         body: JSON.stringify({ fileName: file.name, fileType: file.type })
                     });
                     if (!urlResponse.ok) throw new Error(`Failed to get upload URL for ${file.name}.`);
@@ -70,10 +69,9 @@ export default function CreatePost({ onPostCreated }) {
                 imageUrls: uploadedImageUrls
             };
 
-            const postResponse = await fetch('https://edulink-g0gqgxhhezfjbzg4.southindia-01.azurewebsites.net/api/posts', {
+            const postResponse = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:4000'}/api/posts`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
                 body: JSON.stringify(postData)
             });
             if (!postResponse.ok) throw new Error('Failed to create post on server.');

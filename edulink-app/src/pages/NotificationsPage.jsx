@@ -13,10 +13,9 @@ export default function NotificationsPage({ currentUserData, navigateToProfile, 
                 return;
             }
             try {
-                const response = await fetch('https://edulink-g0gqgxhhezfjbzg4.southindia-01.azurewebsites.net/api/users/notifications', {
+                const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:4000'}/api/users/notifications`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    credentials: 'include',
                     body: JSON.stringify({ userIds: requestIds })
                 });
                 const data = await response.json();
@@ -32,10 +31,9 @@ export default function NotificationsPage({ currentUserData, navigateToProfile, 
 
     const handleConnection = async (action, senderId) => {
         try {
-            const response = await fetch(`https://edulink-g0gqgxhhezfjbzg4.southindia-01.azurewebsites.net/api/users/${senderId}/${action}`, {
+            const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:4000'}/api/users/${senderId}/${action}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
                 body: JSON.stringify({ currentUserId: auth.currentUser.uid })
             });
             if (!response.ok) throw new Error(`Failed to ${action} request.`);
@@ -59,16 +57,16 @@ export default function NotificationsPage({ currentUserData, navigateToProfile, 
 
             <div>
                 {requests.map(user => (
-                    <div key={user.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px', borderBottom: '1px solid #eee' }}>
-                        <div onClick={() => navigateToProfile(user.id)} style={{ display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer' }}>
-                            <img src={user.profilePictureUrl} alt={user.displayName} style={{ width: 50, height: 50, borderRadius: '50%' }} />
+                    <div key={user.user_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px', borderBottom: '1px solid #eee' }}>
+                        <div onClick={() => navigateToProfile(user.user_id)} style={{ display: 'flex', alignItems: 'center', gap: '15px', cursor: 'pointer' }}>
+                            <img src={user.profile_picture_url} alt={user.display_name} style={{ width: 50, height: 50, borderRadius: '50%' }} />
                             <div>
-                                <p style={{ margin: 0 }}><strong>{user.displayName}</strong> wants to connect with you.</p>
+                                <p style={{ margin: 0 }}><strong>{user.display_name}</strong> wants to connect with you.</p>
                             </div>
                         </div>
                         <div style={{display: 'flex', gap: '10px'}}>
-                            <button onClick={() => handleConnection('accept-connect', user.id)} style={{padding: '8px 12px', background: '#e7f3ff', color: '#1877f2', border: 'none', borderRadius: '4px'}}>Accept</button>
-                            <button onClick={() => handleConnection('cancel-request', user.id)} style={{padding: '8px 12px'}}>Decline</button>
+                            <button onClick={() => handleConnection('accept-connect', user.user_id)} style={{padding: '8px 12px', background: '#e7f3ff', color: '#1877f2', border: 'none', borderRadius: '4px'}}>Accept</button>
+                            <button onClick={() => handleConnection('cancel-request', user.user_id)} style={{padding: '8px 12px'}}>Decline</button>
                         </div>
                     </div>
                 ))}

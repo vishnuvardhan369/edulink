@@ -1,6 +1,4 @@
 import React from 'react';
-import { doc, getDoc, writeBatch } from 'firebase/firestore';
-import { db } from '../App';
 
 function useDebounce(value, delay) {
     const [debouncedValue, setDebouncedValue] = React.useState(value);
@@ -23,10 +21,18 @@ export default function UsernameSelectionPage({ user, onUsernameSet }) {
         const checkUsername = async () => {
             if (debouncedUsername.length < 3) return;
             setIsChecking(true);
-            const usernameDocRef = doc(db, 'usernames', debouncedUsername);
-            const usernameDocSnap = await getDoc(usernameDocRef);
-            setFeedback(usernameDocSnap.exists() ? 'Username is already taken.' : 'Username is available!');
-            setIsValid(!usernameDocSnap.exists());
+            try {
+                // Check if username exists by searching for it
+                const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:4000'}/api/users/search?query=${debouncedUsername}`);
+                const users = await response.json();
+                const usernameExists = users.some(u => u.username === debouncedUsername);
+                setFeedback(usernameExists ? 'Username is already taken.' : 'Username is available!');
+                setIsValid(!usernameExists);
+            } catch (error) {
+                console.error('Error checking username:', error);
+                setFeedback('Error checking username availability.');
+                setIsValid(false);
+            }
             setIsChecking(false);
         };
         if (/^[a-zA-Z0-9_]{3,15}$/.test(debouncedUsername)) checkUsername();
@@ -38,35 +44,29 @@ export default function UsernameSelectionPage({ user, onUsernameSet }) {
         if (!isValid) return; 
         setIsSubmitting(true);
         try {
-            const userDocRef = doc(db, 'users', user.uid);
-            const usernameDocRef = doc(db, 'usernames', username);
-            const batch = writeBatch(db);
-            
             const displayName = user.displayName || username;
+            const profilePictureUrl = user.photoURL || `https://placehold.co/400x400/EBF4FF/76A9FA?text=${username.charAt(0).toUpperCase()}`;
 
             const newUserData = {
-                username: username, // already lowercase
-                displayName: displayName,
-                // **NEW**: Add the lowercase version for searching
-                displayName_lowercase: displayName.toLowerCase(),
+                userId: user.uid,
+                username: username,
                 email: user.email,
-                uid: user.uid,
-                createdAt: new Date(),
-                profilePictureUrl: user.photoURL || `https://placehold.co/400x400/EBF4FF/76A9FA?text=${username.charAt(0).toUpperCase()}`,
-                headline: '',
-                bio: '',
-                location: '',
-                skills: [],
-                socialLinks: { linkedin: '', github: '' },
-                followers: [],
-                following: [],
-                connectionRequestsSent: [],
-                connectionRequestsReceived: []
+                displayName: displayName,
+                profilePictureUrl: profilePictureUrl
             };
-            
-            batch.set(userDocRef, newUserData);
-            batch.set(usernameDocRef, { uid: user.uid });
-            await batch.commit();
+
+            const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:4000'}/api/users`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(newUserData)
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to create user profile');
+            }
+
             onUsernameSet();
         } catch (error) { 
             console.error("Error setting username:", error);

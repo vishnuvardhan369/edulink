@@ -23,7 +23,7 @@ export default function SearchPage({ navigateToProfile, navigateToHome }) {
             }
             setLoading(true);
             try {
-                const response = await fetch(`https://edulink-g0gqgxhhezfjbzg4.southindia-01.azurewebsites.net/api/users/search?query=${debouncedQuery}`);
+                const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:4000'}/api/users/search?query=${debouncedQuery}`);
                 const data = await response.json();
                 setResults(data);
             } catch (error) {
@@ -53,10 +53,10 @@ export default function SearchPage({ navigateToProfile, navigateToHome }) {
 
             <div>
                 {results.map(user => (
-                    <div key={user.id} onClick={() => navigateToProfile(user.id)} style={{ display: 'flex', alignItems: 'center', gap: '15px', padding: '10px', cursor: 'pointer', borderBottom: '1px solid #eee' }}>
-                        <img src={user.profilePictureUrl} alt={user.displayName} style={{ width: 50, height: 50, borderRadius: '50%' }} />
+                    <div key={user.user_id} onClick={() => navigateToProfile(user.user_id)} style={{ display: 'flex', alignItems: 'center', gap: '15px', padding: '10px', cursor: 'pointer', borderBottom: '1px solid #eee' }}>
+                        <img src={user.profile_picture_url} alt={user.display_name} style={{ width: 50, height: 50, borderRadius: '50%' }} />
                         <div>
-                            <p style={{ margin: 0, fontWeight: 'bold' }}>{user.displayName}</p>
+                            <p style={{ margin: 0, fontWeight: 'bold' }}>{user.display_name}</p>
                             <p style={{ margin: 0, color: '#555' }}>@{user.username}</p>
                         </div>
                     </div>
