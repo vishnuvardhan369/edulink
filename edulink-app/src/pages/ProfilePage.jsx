@@ -15,7 +15,7 @@ function useProfileData(userId) {
         try {
             // For now, we'll use the search endpoint to get user data
             // In a real app, you might want a dedicated /api/users/:userId endpoint
-            const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:4000'}/api/users/search?query=${userId}`);
+            const response = await fetch(`https://edulink-g0gqgxhhezfjbzg4.southindia-01.azurewebsites.net/api/users/search?query=${userId}`);
             const users = await response.json();
             const userData = users.find(u => u.user_id === userId);
             setProfileData(userData || null);
@@ -68,7 +68,7 @@ export default function ProfilePage({ viewingProfileId, currentUserData, navigat
 
     const handleConnection = async (action) => {
         try {
-            const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:4000'}/api/users/${viewingProfileId}/${action}`, {
+            const response = await fetch(`https://edulink-g0gqgxhhezfjbzg4.southindia-01.azurewebsites.net/api/users/${viewingProfileId}/${action}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ currentUserId: currentUser.uid })
@@ -86,7 +86,7 @@ export default function ProfilePage({ viewingProfileId, currentUserData, navigat
         if (!file) return;
         setUploading(true);
         try {
-            const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:4000'}/api/generate-upload-url`, {
+            const response = await fetch(`https://edulink-g0gqgxhhezfjbzg4.southindia-01.azurewebsites.net/api/generate-upload-url`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ fileName: file.name })

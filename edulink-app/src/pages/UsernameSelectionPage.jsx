@@ -23,7 +23,7 @@ export default function UsernameSelectionPage({ user, onUsernameSet }) {
             setIsChecking(true);
             try {
                 // Check if username exists by searching for it
-                const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:4000'}/api/users/search?query=${debouncedUsername}`);
+                const response = await fetch(`https://edulink-g0gqgxhhezfjbzg4.southindia-01.azurewebsites.net/api/users/search?query=${debouncedUsername}`);
                 const users = await response.json();
                 const usernameExists = users.some(u => u.username === debouncedUsername);
                 setFeedback(usernameExists ? 'Username is already taken.' : 'Username is available!');
@@ -55,7 +55,7 @@ export default function UsernameSelectionPage({ user, onUsernameSet }) {
                 profilePictureUrl: profilePictureUrl
             };
 
-            const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:4000'}/api/users`, {
+            const response = await fetch(`https://edulink-g0gqgxhhezfjbzg4.southindia-01.azurewebsites.net/api/users`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

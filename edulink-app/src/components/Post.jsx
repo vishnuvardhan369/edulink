@@ -63,7 +63,7 @@ export default function Post({ post, onPostUpdate, onPostDelete, navigateToProfi
         if (!currentUser) return;
         
         try {
-            const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:4000'}/api/posts/${post.post_id}/like`, {
+            const response = await fetch(`https://edulink-g0gqgxhhezfjbzg4.southindia-01.azurewebsites.net/api/posts/${post.post_id}/like`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ userId: currentUser.uid })
@@ -88,7 +88,7 @@ export default function Post({ post, onPostUpdate, onPostDelete, navigateToProfi
         const textToSubmit = commentText;
         setCommentText('');
         try {
-            const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:4000'}/api/posts/${post.post_id}/comment`, {
+            const response = await fetch(`https://edulink-g0gqgxhhezfjbzg4.southindia-01.azurewebsites.net/api/posts/${post.post_id}/comment`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ userId: currentUser.uid, text: textToSubmit })
@@ -121,7 +121,7 @@ export default function Post({ post, onPostUpdate, onPostDelete, navigateToProfi
             return;
         }
         try {
-            const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:4000'}/api/posts/${post.post_id}`, {
+            const response = await fetch(`https://edulink-g0gqgxhhezfjbzg4.southindia-01.azurewebsites.net/api/posts/${post.post_id}`, {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ userId: currentUser.uid })

@@ -23,7 +23,7 @@ export default function SearchPage({ navigateToProfile, navigateToHome }) {
             }
             setLoading(true);
             try {
-                const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:4000'}/api/users/search?query=${debouncedQuery}`);
+                const response = await fetch(`https://edulink-g0gqgxhhezfjbzg4.southindia-01.azurewebsites.net/api/users/search?query=${debouncedQuery}`);
                 const data = await response.json();
                 setResults(data);
             } catch (error) {
