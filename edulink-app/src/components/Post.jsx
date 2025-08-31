@@ -163,8 +163,9 @@ export default function Post({ post, onPostUpdate, onPostDelete, navigateToProfi
     const handleCommentSubmit = async (e) => {
         e.preventDefault();
         if (!commentText.trim() || !currentUser) return;
+        
         const textToSubmit = commentText;
-        setCommentText('');
+        
         try {
             const response = await apiCall(`/api/posts/${post.id}/comment`, {
                 method: 'POST',
@@ -173,10 +174,15 @@ export default function Post({ post, onPostUpdate, onPostDelete, navigateToProfi
                 body: JSON.stringify({ userId: currentUser.uid, text: textToSubmit })
             });
             if (!response.ok) throw new Error("Failed to post comment");
+            
+            // Only clear the comment text AFTER successful response
+            setCommentText('');
             const updatedPost = await response.json();
             onPostUpdate(updatedPost);
         } catch (error) {
+            console.error('Error posting comment:', error);
             alert('Failed to post comment.');
+            // Don't clear comment text on error so user can retry
         }
     };
     

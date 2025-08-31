@@ -60,7 +60,10 @@ export default function Poll({ poll, onPollUpdate, navigateToProfile }) {
             
             if (response.ok) {
                 setShowResults(true);
-                if (onPollUpdate) onPollUpdate();
+                // Add a delay before refreshing to ensure backend has processed the vote
+                setTimeout(() => {
+                    if (onPollUpdate) onPollUpdate();
+                }, 500);
             } else {
                 throw new Error('Failed to submit vote');
             }

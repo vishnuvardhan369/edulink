@@ -78,15 +78,25 @@ export default function ProfilePage({ viewingProfileId, currentUserData, navigat
 
     const handleConnection = async (action) => {
         try {
+            console.log(`Attempting to ${action} user ${viewingProfileId}`);
             const response = await apiCall(`/api/users/${viewingProfileId}/${action}`, {
                 method: 'POST',
                 body: JSON.stringify({ currentUserId: currentUser.uid })
             });
-            if (!response.ok) throw new Error(`Failed to ${action} user.`);
+            
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || `Failed to ${action} user.`);
+            }
+            
+            console.log(`Successfully ${action} user`);
+            
+            // Refresh data after successful action
             await refetch();
             await onProfileUpdate();
         } catch (error) {
-            alert(error.message);
+            console.error(`Error ${action} user:`, error);
+            alert(`Failed to ${action}: ${error.message}`);
         }
     };
     

@@ -515,17 +515,53 @@ app.post('/api/users/:userId/request-connect', async (req, res) => {
             return res.status(404).send({ error: 'One or both users not found.' });
         }
         
-        // Insert connection request (ignore if already exists)
+        // Check if connection request already exists
+        const existingRequestQuery = `
+            SELECT request_id FROM connection_requests 
+            WHERE sender_id = $1 AND recipient_id = $2
+        `;
+        const existingRequest = await client.query(existingRequestQuery, [senderId, recipientId]);
+        if (existingRequest.rows.length > 0) {
+            return res.status(400).send({ error: 'Connection request already exists.' });
+        }
+        
+        // Begin transaction
+        await client.query('BEGIN');
+        
+        // Insert connection request
         const insertRequestQuery = `
             INSERT INTO connection_requests (sender_id, recipient_id, created_at) 
             VALUES ($1, $2, NOW())
-            ON CONFLICT (sender_id, recipient_id) DO NOTHING
+            RETURNING request_id
         `;
         await client.query(insertRequestQuery, [senderId, recipientId]);
+        
+        // Get sender's display name for notification
+        const senderQuery = `SELECT display_name FROM users WHERE user_id = $1`;
+        const senderResult = await client.query(senderQuery, [senderId]);
+        const senderName = senderResult.rows[0]?.display_name || 'Someone';
+        
+        // Create notification for recipient
+        const notificationQuery = `
+            INSERT INTO notifications (user_id, type, title, message, related_user_id, is_read, created_at)
+            VALUES ($1, $2, $3, $4, $5, $6, NOW())
+        `;
+        await client.query(notificationQuery, [
+            recipientId,
+            'connection_request',
+            'New Connection Request',
+            `${senderName} wants to connect with you`,
+            senderId,
+            false
+        ]);
+        
+        // Commit transaction
+        await client.query('COMMIT');
         
         res.status(200).send({ message: 'Connection request sent.' });
     } catch (error) {
         console.error('Error sending connection request:', error);
+        await client.query('ROLLBACK');
         res.status(500).send({ error: 'Failed to send connection request.' });
     }
 });
