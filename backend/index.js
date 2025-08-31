@@ -525,7 +525,7 @@ app.post('/api/users/:userId/request-connect', async (req, res) => {
         
         // Check if connection request already exists
         const existingRequestQuery = `
-            SELECT request_id FROM connection_requests 
+            SELECT id FROM connection_requests 
             WHERE sender_id = $1 AND recipient_id = $2
         `;
         const existingRequest = await client.query(existingRequestQuery, [senderId, recipientId]);
@@ -555,7 +555,7 @@ app.post('/api/users/:userId/request-connect', async (req, res) => {
             const insertRequestQuery = `
                 INSERT INTO connection_requests (sender_id, recipient_id, created_at) 
                 VALUES ($1, $2, NOW())
-                RETURNING request_id
+                RETURNING id
             `;
             const requestResult = await client.query(insertRequestQuery, [senderId, recipientId]);
             console.log('Connection request created:', requestResult.rows[0]);
@@ -589,7 +589,7 @@ app.post('/api/users/:userId/request-connect', async (req, res) => {
             
             res.status(200).json({ 
                 message: 'Connection request sent successfully',
-                requestId: requestResult.rows[0].request_id,
+                requestId: requestResult.rows[0].id,
                 notificationId: notificationResult.rows[0].notification_id
             });
             
@@ -615,7 +615,7 @@ app.post('/api/users/:userId/accept-connect', async (req, res) => {
         
         // Check if connection request exists
         const checkRequestQuery = `
-            SELECT request_id FROM connection_requests 
+            SELECT id FROM connection_requests 
             WHERE sender_id = $1 AND recipient_id = $2
         `;
         const requestResult = await client.query(checkRequestQuery, [senderId, recipientId]);
