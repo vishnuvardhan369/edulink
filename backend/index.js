@@ -169,8 +169,8 @@ app.post('/api/posts', async (req, res) => {
         // Insert images if provided
         if (imageUrls && imageUrls.length > 0) {
             const insertImageQuery = `
-                INSERT INTO post_images (post_id, image_url, created_at) 
-                VALUES ($1, $2, NOW())
+                INSERT INTO post_images (post_id, image_url) 
+                VALUES ($1, $2)
             `;
             for (const imageUrl of imageUrls) {
                 await client.query(insertImageQuery, [postId, imageUrl]);
