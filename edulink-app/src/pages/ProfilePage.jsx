@@ -143,10 +143,14 @@ export default function ProfilePage({ viewingProfileId, currentUserData, navigat
                 body: JSON.stringify(dataToSave)
             });
             if (!saveResponse.ok) throw new Error('Failed to save profile');
+            
+            // Refresh both the viewed profile data and current user data
             await refetch();
+            await onProfileUpdate();
             setIsEditing(false);
             alert('Profile updated successfully!');
         } catch (error) {
+            console.error('Error updating profile:', error);
             alert('Failed to update profile.');
         }
     };
