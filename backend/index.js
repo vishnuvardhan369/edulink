@@ -609,18 +609,26 @@ app.post('/api/users/:userId/accept-connect', async (req, res) => {
     try {
         const { userId: senderId } = req.params;
         const { currentUserId: recipientId } = req.body;
+        
+        console.log('Accept connect request:', { senderId, recipientId });
+        
         if (!recipientId || senderId === recipientId) {
-            return res.status(400).send({ error: 'Invalid request.' });
+            console.log('Invalid request: missing recipient or same user');
+            return res.status(400).json({ error: 'Invalid request.' });
         }
         
-        // Check if connection request exists
+        // Check if connection request exists (sender sent request to recipient)
         const checkRequestQuery = `
             SELECT id FROM connection_requests 
             WHERE sender_id = $1 AND recipient_id = $2
         `;
         const requestResult = await client.query(checkRequestQuery, [senderId, recipientId]);
+        
+        console.log('Connection request found:', requestResult.rows.length > 0);
+        
         if (requestResult.rows.length === 0) {
-            return res.status(404).send({ error: 'Connection request not found.' });
+            console.log('Connection request not found for:', { senderId, recipientId });
+            return res.status(404).json({ error: 'Connection request not found.' });
         }
         
         // Begin transaction
@@ -633,6 +641,7 @@ app.post('/api/users/:userId/accept-connect', async (req, res) => {
                 WHERE sender_id = $1 AND recipient_id = $2
             `;
             await client.query(deleteRequestQuery, [senderId, recipientId]);
+            console.log('Connection request deleted');
             
             // Add mutual connections
             const insertConnectionQuery = `
@@ -641,16 +650,41 @@ app.post('/api/users/:userId/accept-connect', async (req, res) => {
                 ON CONFLICT (follower_id, following_id) DO NOTHING
             `;
             await client.query(insertConnectionQuery, [recipientId, senderId]);
+            console.log('Mutual connections created');
+            
+            // Get user names for notification
+            const getUsersQuery = `SELECT user_id, display_name FROM users WHERE user_id IN ($1, $2)`;
+            const usersResult = await client.query(getUsersQuery, [senderId, recipientId]);
+            const recipientInfo = usersResult.rows.find(user => user.user_id === recipientId);
+            const recipientName = recipientInfo?.display_name || 'Someone';
+            
+            // Create notification for sender (request was accepted)
+            const notificationQuery = `
+                INSERT INTO notifications (user_id, type, title, message, related_user_id, is_read, created_at)
+                VALUES ($1, $2, $3, $4, $5, $6, NOW())
+            `;
+            await client.query(notificationQuery, [
+                senderId,
+                'connection_accepted',
+                'Connection Request Accepted',
+                `${recipientName} accepted your connection request`,
+                recipientId,
+                false
+            ]);
+            console.log('Acceptance notification created');
             
             await client.query('COMMIT');
-            res.status(200).send({ message: 'Connection accepted.' });
+            console.log('Transaction committed successfully');
+            
+            res.status(200).json({ message: 'Connection accepted successfully.' });
         } catch (error) {
             await client.query('ROLLBACK');
+            console.error('Transaction error in accept-connect:', error);
             throw error;
         }
     } catch (error) {
         console.error('Error accepting connection:', error);
-        res.status(500).send({ error: 'Failed to accept connection.' });
+        res.status(500).json({ error: 'Failed to accept connection: ' + error.message });
     }
 });
 
