@@ -136,7 +136,11 @@ app.post('/api/posts', async (req, res) => {
                 VALUES ($1, $2, $3, $4, NOW())
             `;
             // Use userId as fallback values (frontend should call proper user creation endpoint)
-            await client.query(createUserQuery, [userId, `user_${userId.slice(-8)}`, `${userId}@temp.com`, `User ${userId.slice(-8)}`]);
+            const tempUsername = `user_${userId.slice(-8)}`;
+            const tempEmail = `${userId}@temp.com`;
+            const tempDisplayName = `User ${userId.slice(-8)}`;
+            console.log('DEBUG: Creating temp user with:', { tempUsername, tempEmail, tempDisplayName });
+            await client.query(createUserQuery, [userId, tempUsername, tempEmail, tempDisplayName]);
             console.log('DEBUG: Created temporary user profile');
         }
         
@@ -646,8 +650,10 @@ app.put('/api/users/:userId', async (req, res) => {
 // Create user endpoint for when users sign up
 app.post('/api/users', async (req, res) => {
     try {
+        console.log('DEBUG: Creating user with data:', req.body);
         const { userId, username, email, displayName, profilePictureUrl, bio } = req.body;
         if (!userId || !username || !email || !displayName) {
+            console.log('DEBUG: Missing required fields for user creation');
             return res.status(400).send({ error: 'userId, username, email, and displayName are required.' });
         }
         
@@ -664,6 +670,7 @@ app.post('/api/users', async (req, res) => {
         `;
         
         const result = await client.query(insertUserQuery, [userId, username, email, displayName, profilePictureUrl, bio]);
+        console.log('DEBUG: User created successfully:', result.rows[0]);
         res.status(201).send(result.rows[0]);
     } catch (error) {
         console.error('Error creating user:', error);
