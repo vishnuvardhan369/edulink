@@ -669,7 +669,8 @@ app.put('/api/users/:userId', async (req, res) => {
                 username = COALESCE($2, username),
                 display_name = COALESCE($3, display_name),
                 bio = COALESCE($4, bio),
-                profile_picture_url = COALESCE($5, profile_picture_url)
+                profile_picture_url = COALESCE($5, profile_picture_url),
+                updated_at = NOW()
             WHERE user_id = $1
             RETURNING user_id as id, username, display_name as "displayName", bio, profile_picture_url as "profilePictureUrl"
         `;
