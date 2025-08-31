@@ -1,69 +1,22 @@
-/* --- GLOBAL STYLES & LAYOUT --- */
-:root {
-    --primary-blue: #1877f2;
-    --background-gray: #f0f2f5;
-    --card-background: #ffffff;
-    --text-primary: #050505;
-    --text-secondary: #65676b;
-    --border-color: #ced0d4;
+/* Import Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+/* Import our modern UI styles */
+@import './styles/modern-ui.css';
+
+/* EduLink App Specific Styles */
+.edulink-app {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #f8f9fa 0%, #e3f2fd 100%);
 }
 
-body {
-    margin: 0;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-    background-color: var(--background-gray);
-    color: var(--text-primary);
-}
-
-
-/* --- NEW: Wrapper for Centering Auth Pages --- */
+/* Legacy compatibility - keeping some existing styles for smooth transition */
 .auth-page-wrapper {
     display: flex;
     justify-content: center;
     align-items: center;
     min-height: 100vh;
     padding: 1rem;
-}
-
-/* --- App Header / Navbar --- */
-.app-header {
-    background-color: var(--card-background);
-    padding: 0 1.5rem;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    position: sticky;
-    top: 0;
-    z-index: 1000;
-}
-
-.header-logo {
-    font-size: 1.5rem;
-    font-weight: bold;
-    color: var(--primary-blue);
-    cursor: pointer;
-}
-
-.header-nav {
-    display: flex;
-    gap: 1rem;
-    align-items: center;
-}
-
-.header-nav button {
-    padding: 8px 16px;
-    border-radius: 6px;
-    border: 1px solid transparent;
-    font-weight: 600;
-    cursor: pointer;
-    transition: background-color 0.2s ease;
-    background: none;
-    color: var(--text-secondary);
-}
-
-.header-nav button:hover {
-    background-color: #f0f2f5;
 }
 
 .notification-button {
@@ -74,7 +27,7 @@ body {
     position: absolute;
     top: 2px;
     right: 2px;
-    background: red;
+    background: var(--error-color);
     color: white;
     border-radius: 50%;
     width: 18px;
@@ -83,52 +36,6 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-}
-
-
-/* --- Main Content Layout --- */
-.main-content {
-    padding: 1.5rem;
-    max-width: 900px; /* Increased width for a better desktop view */
-    margin: 1.5rem auto; /* This keeps it centered */
-}
-
-/* --- FORMS & CARDS (Posts, CreatePost, etc.) --- */
-.card {
-    background: var(--card-background);
-    padding: 1rem 1.5rem;
-    margin-bottom: 1rem;
-    border-radius: 8px;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
-}
-
-.card h2, .card h3 {
-    margin-top: 0;
-}
-
-/* --- POSTS --- */
-.post-actions {
-    margin-top: 0.75rem;
-    border-top: 1px solid var(--border-color);
-    padding-top: 0.5rem;
-    display: flex;
-    justify-content: space-around; /* Evenly space buttons */
-}
-
-/* --- UPDATED: Post Action Buttons --- */
-.post-actions button {
-    flex-grow: 1;
-    color:white;
-    background-color: #f0f2f5; /* Changed from white to light gray */
-    border: none;
-    font-weight: 600;
-    color: var(--text-secondary);
-    padding: 0.5rem;
-    border-radius: 6px;
-    transition: background-color 0.2s ease;
-}
-.post-actions button:hover {
-    background-color: #e4e6eb; /* Darker gray on hover */
 }
 
 .post-image-grid {
@@ -151,59 +58,5 @@ body {
     width: 100%;
     height: 100%;
     object-fit: cover;
-    border-radius: 8px;
-}
-
-
-/* --- PROFILE PAGE --- */
-.profile-header {
-    display: flex;
-    align-items: center;
-    gap: 2rem;
-    margin-top: 1rem;
-}
-
-.profile-picture {
-    width: 150px;
-    height: 150px;
-    border-radius: 50%;
-    object-fit: cover;
-    border: 4px solid var(--card-background);
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-}
-
-.profile-info h1 {
-    margin: 0;
-    font-size: 2rem;
-}
-.profile-info p {
-    margin: 0;
-    color: var(--text-secondary);
-}
-.profile-stats {
-    display: flex;
-    gap: 1.5rem;
-    margin-top: 1rem;
-}
-
-/* --- RESPONSIVE DESIGN --- */
-@media (max-width: 768px) {
-    .main-content {
-        margin: 1rem auto;
-        padding: 1rem;
-    }
-    .app-header {
-        padding: 0 1rem;
-    }
-}
-
-@media (max-width: 640px) {
-    .profile-header {
-        flex-direction: column;
-        text-align: center;
-        gap: 1rem;
-    }
-    .profile-stats {
-        justify-content: center;
-    }
+    border-radius: var(--border-radius);
 }

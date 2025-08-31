@@ -91,45 +91,141 @@ export default function CreatePost({ onPostCreated }) {
     };
 
     return (
-        <div style={{ border: '1px solid #ccc', padding: '15px', marginBottom: '20px', background: 'white', borderRadius: '8px' }}>
-            <h3>Create a New Post</h3>
+        <div>
+            <div className="d-flex align-items-center gap-3 mb-3">
+                <div className="avatar">
+                    <img 
+                        src={auth.currentUser?.photoURL || 'https://via.placeholder.com/40'} 
+                        alt="Your profile" 
+                        className="avatar-img" 
+                    />
+                </div>
+                <h3 style={{ margin: 0, fontSize: 'var(--font-size-lg)', fontWeight: 'var(--font-weight-semibold)' }}>
+                    ✨ Create a Post
+                </h3>
+            </div>
+
             <form onSubmit={handleSubmit}>
-                <textarea
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    placeholder="What's on your mind?"
-                    rows="4"
-                    style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px' }}
-                />
-                <input 
-                    type="file" 
-                    accept="image/*" 
-                    multiple
-                    onChange={handleImageChange}
-                    ref={fileInputRef}
-                    style={{ margin: '10px 0' }}
-                />
+                <div className="form-group">
+                    <textarea
+                        value={description}
+                        onChange={(e) => setDescription(e.target.value)}
+                        placeholder="What's on your mind? Share your thoughts, insights, or updates..."
+                        rows="4"
+                        className="form-control textarea"
+                        style={{ resize: 'vertical', minHeight: '100px' }}
+                    />
+                </div>
                 
-                {/* Display list of selected files */}
+                <div className="d-flex align-items-center gap-3 mb-3">
+                    <label htmlFor="image-upload" className="btn btn-secondary btn-sm" style={{ cursor: 'pointer' }}>
+                        📷 Add Images ({imageFiles.length}/5)
+                    </label>
+                    <input 
+                        id="image-upload"
+                        type="file" 
+                        accept="image/*" 
+                        multiple
+                        onChange={handleImageChange}
+                        ref={fileInputRef}
+                        style={{ display: 'none' }}
+                    />
+                    {imageFiles.length > 0 && (
+                        <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-secondary)' }}>
+                            {imageFiles.length} image{imageFiles.length !== 1 ? 's' : ''} selected
+                        </span>
+                    )}
+                </div>
+                
+                {/* Display selected files with modern styling */}
                 {imageFiles.length > 0 && (
-                    <div style={{marginBottom: '10px'}}>
-                        <p>Selected files ({imageFiles.length}/5):</p>
-                        <ul style={{listStyle: 'none', padding: 0}}>
-                            {imageFiles.map((file, index) => (
-                                <li key={index} style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '14px', padding: '2px 0'}}>
-                                    <span>{file.name}</span>
-                                    <button type="button" onClick={() => removeImage(index)} style={{background: 'none', border: 'none', color: 'red', cursor: 'pointer'}}>X</button>
-                                </li>
-                            ))}
-                        </ul>
+                    <div className="mb-3">
+                        <div style={{ 
+                            background: 'var(--bg-secondary)', 
+                            borderRadius: 'var(--border-radius)', 
+                            padding: 'var(--spacing-sm)' 
+                        }}>
+                            <p style={{ 
+                                margin: '0 0 var(--spacing-xs) 0', 
+                                fontSize: 'var(--font-size-sm)', 
+                                fontWeight: 'var(--font-weight-medium)' 
+                            }}>
+                                📁 Selected Images:
+                            </p>
+                            <div className="d-flex flex-wrap gap-2">
+                                {imageFiles.map((file, index) => (
+                                    <div key={index} 
+                                         className="d-flex align-items-center gap-2"
+                                         style={{
+                                             background: 'var(--bg-card)',
+                                             padding: 'var(--spacing-xs) var(--spacing-sm)',
+                                             borderRadius: 'var(--border-radius)',
+                                             border: '1px solid var(--border-color)',
+                                             fontSize: 'var(--font-size-xs)'
+                                         }}>
+                                        <span>{file.name}</span>
+                                        <button 
+                                            type="button" 
+                                            onClick={() => removeImage(index)}
+                                            className="btn btn-sm"
+                                            style={{ 
+                                                background: 'none', 
+                                                border: 'none', 
+                                                color: 'var(--error-color)', 
+                                                cursor: 'pointer',
+                                                padding: '2px',
+                                                width: '20px',
+                                                height: '20px',
+                                                borderRadius: '50%',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center'
+                                            }}
+                                            onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--error-color)'}
+                                            onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
+                                        >
+                                            ×
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
                     </div>
                 )}
                 
-                {error && <p style={{ color: 'red' }}>{error}</p>}
+                {error && (
+                    <div className="mb-3" style={{ 
+                        background: 'var(--error-color)', 
+                        color: 'white', 
+                        padding: 'var(--spacing-sm) var(--spacing-md)', 
+                        borderRadius: 'var(--border-radius)', 
+                        fontSize: 'var(--font-size-sm)' 
+                    }}>
+                        <strong>Error:</strong> {error}
+                    </div>
+                )}
 
-                <button type="submit" disabled={uploading} style={{ padding: '10px 20px' }}>
-                    {uploading ? 'Posting...' : 'Post'}
-                </button>
+                <div className="d-flex justify-content-between align-items-center">
+                    <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-secondary)' }}>
+                        {description.length}/500 characters
+                    </div>
+                    <button 
+                        type="submit" 
+                        disabled={uploading || !description.trim()} 
+                        className={`btn ${uploading ? 'btn-secondary' : 'btn-primary'} btn-lg`}
+                    >
+                        {uploading ? (
+                            <>
+                                <div className="spinner" style={{ width: '16px', height: '16px', marginRight: '8px' }}></div>
+                                Posting...
+                            </>
+                        ) : (
+                            <>
+                                🚀 Share Post
+                            </>
+                        )}
+                    </button>
+                </div>
             </form>
         </div>
     );

@@ -202,108 +202,167 @@ export default function ProfilePage({ viewingProfileId, currentUserData, navigat
 
     // --- VIEW MODE ---
     const renderConnectionButtons = () => {
-        if (isOwnProfile) return <button onClick={() => setIsEditing(true)}>Edit Profile</button>;
-        if (isConnected) return <button disabled>Connected</button>;
-        if (hasReceivedRequest) return <button onClick={() => handleConnection('accept-connect')}>Accept Request</button>;
-        if (hasSentRequest) return <button onClick={() => handleConnection('cancel-request')}>Request Sent</button>;
+        if (isOwnProfile) {
+            return (
+                <button onClick={() => setIsEditing(true)} className="btn btn-primary">
+                    ✏️ Edit Profile
+                </button>
+            );
+        }
+        
+        if (isConnected) {
+            return (
+                <button disabled className="btn btn-success">
+                    ✅ Connected
+                </button>
+            );
+        }
+        
+        if (hasReceivedRequest) {
+            return (
+                <button onClick={() => handleConnection('accept-connect')} className="btn btn-success">
+                    ✅ Accept Request
+                </button>
+            );
+        }
+        
+        if (hasSentRequest) {
+            return (
+                <button onClick={() => handleConnection('cancel-request')} className="btn btn-secondary">
+                    ⏳ Request Sent
+                </button>
+            );
+        }
 
         return (
-            <div style={{display: 'flex', gap: '10px'}}>
-                <button onClick={() => handleConnection('request-connect')}>Connect</button>
+            <div className="d-flex gap-2">
+                <button onClick={() => handleConnection('request-connect')} className="btn btn-primary">
+                    🤝 Connect
+                </button>
                 {isFollowingCurrentUser ? (
-                    <button onClick={() => handleConnection('unfollow')}>Following</button>
+                    <button onClick={() => handleConnection('unfollow')} className="btn btn-outline">
+                        👥 Following
+                    </button>
                 ) : (
-                    <button onClick={() => handleConnection('follow')}>Follow</button>
+                    <button onClick={() => handleConnection('follow')} className="btn btn-secondary">
+                        ➕ Follow
+                    </button>
                 )}
             </div>
         );
     };
 
     return (
-        <div style={{ padding: '20px', maxWidth: '700px', margin: 'auto', fontFamily: 'sans-serif' }}>
-            <button onClick={navigateToHome} style={{marginBottom: '20px'}}>&larr; Back to Home</button>
-            <div style={{display: 'flex', alignItems: 'center', gap: '20px'}}>
-                <img src={viewedUserData.profilePictureUrl} alt={viewedUserData.displayName} style={{width: 120, height: 120, borderRadius: '50%', objectFit: 'cover'}} />
-                <div>
-                    <h1 style={{margin: 0}}>{viewedUserData.displayName}</h1>
-                    <p style={{margin: 0, color: '#555'}}>@{viewedUserData.username}</p>
-                    {viewedUserData.headline && <h3 style={{margin: '5px 0', fontWeight: 'normal'}}>{viewedUserData.headline}</h3>}
-                    <div style={{display: 'flex', gap: '20px', marginTop: '10px'}}>
-                        <span><strong>{followers.length}</strong> Followers</span>
-                        <span><strong>{following.length}</strong> Following</span>
+        <div className="edulink-app">
+            {/* Navigation */}
+            <nav className="navbar">
+                <div className="navbar-content">
+                    <button onClick={navigateToHome} className="btn btn-secondary">
+                        ← Back to Home
+                    </button>
+                    <a href="#" className="navbar-brand">Profile</a>
+                </div>
+            </nav>
+
+            {/* Profile Content */}
+            <div className="content-area" style={{ padding: 'var(--spacing-lg)', maxWidth: '800px', margin: '0 auto' }}>
+                <div className="card fade-in">
+                    {/* Profile Header */}
+                    <div className="profile-header">
+                        <div className="profile-info">
+                            <div className="avatar avatar-xl">
+                                <img src={viewedUserData.profilePictureUrl} alt={viewedUserData.displayName} className="avatar-img" />
+                            </div>
+                            <div className="profile-details">
+                                <h1>{viewedUserData.displayName}</h1>
+                                <p className="username">@{viewedUserData.username}</p>
+                                {viewedUserData.headline && (
+                                    <p style={{ fontSize: 'var(--font-size-lg)', opacity: 0.9, margin: 'var(--spacing-sm) 0' }}>
+                                        {viewedUserData.headline}
+                                    </p>
+                                )}
+                                <div className="profile-stats">
+                                    <div className="profile-stat">
+                                        <span className="profile-stat-number">{followers.length}</span>
+                                        <span className="profile-stat-label">Followers</span>
+                                    </div>
+                                    <div className="profile-stat">
+                                        <span className="profile-stat-number">{following.length}</span>
+                                        <span className="profile-stat-label">Following</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Profile Body */}
+                    <div className="card-body">
+                        {/* Connection Buttons */}
+                        <div className="mb-3">
+                            {renderConnectionButtons()}
+                        </div>
+
+                        {/* Bio */}
+                        {viewedUserData.bio && (
+                            <div className="mb-3">
+                                <p style={{ fontSize: 'var(--font-size-md)', lineHeight: 1.6 }}>
+                                    {viewedUserData.bio}
+                                </p>
+                            </div>
+                        )}
+                        
+                        {/* Location */}
+                        {viewedUserData.location && (
+                            <div className="mb-3">
+                                <div className="d-flex align-items-center gap-2">
+                                    <span style={{ fontSize: 'var(--font-size-lg)' }}>📍</span>
+                                    <span style={{ fontWeight: 'var(--font-weight-medium)' }}>Location:</span>
+                                    <span>{viewedUserData.location}</span>
+                                </div>
+                            </div>
+                        )}
+                        
+                        {/* Skills */}
+                        {viewedUserData.skills && viewedUserData.skills.length > 0 && (
+                            <div className="mb-3">
+                                <div className="d-flex align-items-center gap-2 mb-2">
+                                    <span style={{ fontSize: 'var(--font-size-lg)' }}>🛠️</span>
+                                    <span style={{ fontWeight: 'var(--font-weight-medium)' }}>Skills:</span>
+                                </div>
+                                <div className="skills-container">
+                                    {viewedUserData.skills.map((skill, index) => (
+                                        <span key={index} className="skill-tag">
+                                            {skill}
+                                        </span>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                        
+                        {/* Social Links */}
+                        {viewedUserData.socialLinks && (viewedUserData.socialLinks.linkedin || viewedUserData.socialLinks.github) && (
+                            <div className="mb-3">
+                                <div className="d-flex align-items-center gap-2 mb-2">
+                                    <span style={{ fontSize: 'var(--font-size-lg)' }}>🌐</span>
+                                    <span style={{ fontWeight: 'var(--font-weight-medium)' }}>Social Links:</span>
+                                </div>
+                                <div className="social-links">
+                                    {viewedUserData.socialLinks.linkedin && (
+                                        <a href={viewedUserData.socialLinks.linkedin} target="_blank" rel="noopener noreferrer" className="social-link linkedin">
+                                            LinkedIn
+                                        </a>
+                                    )}
+                                    {viewedUserData.socialLinks.github && (
+                                        <a href={viewedUserData.socialLinks.github} target="_blank" rel="noopener noreferrer" className="social-link github">
+                                            GitHub
+                                        </a>
+                                    )}
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
-            <div style={{margin: '20px 0'}}>
-                {renderConnectionButtons()}
-            </div>
-            {viewedUserData.bio && <p>{viewedUserData.bio}</p>}
-            
-            {/* Display Location */}
-            {viewedUserData.location && (
-                <div style={{marginTop: '15px'}}>
-                    <strong>📍 Location:</strong> {viewedUserData.location}
-                </div>
-            )}
-            
-            {/* Display Skills */}
-            {viewedUserData.skills && viewedUserData.skills.length > 0 && (
-                <div style={{marginTop: '15px'}}>
-                    <strong>🛠️ Skills:</strong>
-                    <div style={{marginTop: '5px'}}>
-                        {viewedUserData.skills.map((skill, index) => (
-                            <span key={index} style={{
-                                display: 'inline-block',
-                                backgroundColor: '#e3f2fd',
-                                color: '#1976d2',
-                                padding: '4px 8px',
-                                margin: '2px',
-                                borderRadius: '4px',
-                                fontSize: '14px'
-                            }}>
-                                {skill}
-                            </span>
-                        ))}
-                    </div>
-                </div>
-            )}
-            
-            {/* Display Social Links */}
-            {viewedUserData.socialLinks && (viewedUserData.socialLinks.linkedin || viewedUserData.socialLinks.github) && (
-                <div style={{marginTop: '15px'}}>
-                    <strong>🌐 Social Links:</strong>
-                    <div style={{marginTop: '5px'}}>
-                        {viewedUserData.socialLinks.linkedin && (
-                            <a href={viewedUserData.socialLinks.linkedin} target="_blank" rel="noopener noreferrer" style={{
-                                display: 'inline-block',
-                                margin: '5px 10px 5px 0',
-                                padding: '8px 12px',
-                                backgroundColor: '#0077b5',
-                                color: 'white',
-                                textDecoration: 'none',
-                                borderRadius: '4px',
-                                fontSize: '14px'
-                            }}>
-                                LinkedIn
-                            </a>
-                        )}
-                        {viewedUserData.socialLinks.github && (
-                            <a href={viewedUserData.socialLinks.github} target="_blank" rel="noopener noreferrer" style={{
-                                display: 'inline-block',
-                                margin: '5px 10px 5px 0',
-                                padding: '8px 12px',
-                                backgroundColor: '#333',
-                                color: 'white',
-                                textDecoration: 'none',
-                                borderRadius: '4px',
-                                fontSize: '14px'
-                            }}>
-                                GitHub
-                            </a>
-                        )}
-                    </div>
-                </div>
-            )}
         </div>
     );
 };

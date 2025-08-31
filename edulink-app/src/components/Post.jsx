@@ -32,15 +32,21 @@ function PostHeader({ userId, timestamp, navigateToProfile }) {
         fetchAuthor();
     }, [userId]);
 
-    if (!author) return <div style={{height: '50px'}}></div>;
+    if (!author) return <div className="loading" style={{height: '50px'}}></div>;
+    
     return (
-        // **NEW**: Added onClick handler and cursor style
-        <div onClick={() => navigateToProfile(userId)} style={{ cursor: 'pointer' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <img src={author.profilePictureUrl} alt={author.displayName} style={{ width: 40, height: 40, borderRadius: '50%', objectFit: 'cover' }} />
-                <div>
-                    <p style={{ margin: 0, fontWeight: 'bold', color: 'black' }}>{author.displayName}</p>
-                    <p style={{ margin: 0, fontSize: '12px', color: '#555' }}>@{author.username} · {formatTimestamp(timestamp)}</p>
+        <div onClick={() => navigateToProfile(userId)} 
+             className="post-author-container" 
+             style={{ cursor: 'pointer', transition: 'all 0.2s ease' }}
+             onMouseEnter={(e) => e.target.style.opacity = '0.8'}
+             onMouseLeave={(e) => e.target.style.opacity = '1'}>
+            <div className="d-flex align-items-center gap-3">
+                <div className="avatar">
+                    <img src={author.profilePictureUrl} alt={author.displayName} className="avatar-img" />
+                </div>
+                <div className="post-author">
+                    <div className="post-author-name">{author.displayName}</div>
+                    <div className="post-author-handle">@{author.username} · {formatTimestamp(timestamp)}</div>
                 </div>
             </div>
         </div>
@@ -49,10 +55,22 @@ function PostHeader({ userId, timestamp, navigateToProfile }) {
 
 function Comment({ comment, navigateToProfile }) {
     return (
-        <div style={{fontSize: '14px', marginTop: '10px', borderTop: '1px solid #f0f0f0', paddingTop: '10px'}}>
-            {/* **NEW**: Pass navigation function down */}
+        <div className="comment" style={{
+            fontSize: 'var(--font-size-sm)', 
+            marginTop: 'var(--spacing-sm)', 
+            borderTop: '1px solid var(--border-color)', 
+            paddingTop: 'var(--spacing-sm)'
+        }}>
             <PostHeader userId={comment.userId} timestamp={comment.createdAt} navigateToProfile={navigateToProfile} />
-            <p style={{marginLeft: '50px', marginTop: '5px', paddingBottom: '5px', color: 'black'}}>{comment.text}</p>
+            <p style={{
+                marginLeft: '50px', 
+                marginTop: 'var(--spacing-xs)', 
+                paddingBottom: 'var(--spacing-xs)', 
+                color: 'var(--text-primary)',
+                lineHeight: 1.4
+            }}>
+                {comment.text}
+            </p>
         </div>
     );
 }
@@ -148,51 +166,137 @@ export default function Post({ post, onPostUpdate, onPostDelete, navigateToProfi
     };
 
     return (
-        <div style={{ border: '1px solid #ddd', padding: '15px', marginBottom: '15px', background: 'white', borderRadius: '8px', position: 'relative' }}>
+        <div className="post">
+            {/* Delete Button for Author */}
             {isAuthor && (
                 <button 
                     onClick={handleDelete}
-                    style={{ position: 'absolute', top: '10px', right: '10px', background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#555' }}
+                    className="btn btn-sm"
+                    style={{ 
+                        position: 'absolute', 
+                        top: 'var(--spacing-sm)', 
+                        right: 'var(--spacing-sm)', 
+                        background: 'none', 
+                        border: 'none', 
+                        fontSize: '20px', 
+                        cursor: 'pointer', 
+                        color: 'var(--text-secondary)',
+                        width: '32px',
+                        height: '32px',
+                        borderRadius: '50%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                    }}
                     title="Delete Post"
+                    onMouseEnter={(e) => {
+                        e.target.style.backgroundColor = 'var(--error-color)';
+                        e.target.style.color = 'white';
+                    }}
+                    onMouseLeave={(e) => {
+                        e.target.style.backgroundColor = 'transparent';
+                        e.target.style.color = 'var(--text-secondary)';
+                    }}
                 >
                     &times;
                 </button>
             )}
 
-            {/* **NEW**: Pass navigation function down */}
-            <PostHeader userId={post.userId} timestamp={post.createdAt} navigateToProfile={navigateToProfile} />
-            <p style={{color: '#1c1e21', whiteSpace: 'pre-wrap', wordWrap: 'break-word'}}>{post.description}</p>
+            {/* Post Header */}
+            <div className="post-header">
+                <PostHeader userId={post.userId} timestamp={post.createdAt} navigateToProfile={navigateToProfile} />
+            </div>
             
-            {imageUrls.length > 0 && (
-                <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fit, minmax(200px, 1fr))`, gap: '5px', marginTop: '10px' }}>
-                    {imageUrls.map((url, index) => (
-                        <div key={index} style={{position: 'relative', width: '100%', paddingTop: '100%'}}>
-                            <img src={url} alt={`Post content ${index + 1}`} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'cover', borderRadius: '8px' }} />
-                        </div>
-                    ))}
-                </div>
-            )}
+            {/* Post Content */}
+            <div className="post-content">
+                <div className="post-text">{post.description}</div>
+                
+                {/* Post Images */}
+                {imageUrls.length > 0 && (
+                    <div className="post-image-grid">
+                        {imageUrls.map((url, index) => (
+                            <div key={index} className="post-image-wrapper">
+                                <img src={url} alt={`Post content ${index + 1}`} className="post-image" />
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
 
-            <div style={{ marginTop: '10px', display: 'flex', gap: '20px', color: '#555', fontSize: '14px' }}>
-                <span>{likes.length} Likes</span>
-                <span onClick={() => setShowComments(!showComments)} style={{cursor: 'pointer'}}>{comments.length} Comments</span>
+            {/* Post Stats */}
+            <div style={{ 
+                padding: 'var(--spacing-sm) var(--spacing-md)', 
+                display: 'flex', 
+                gap: 'var(--spacing-lg)', 
+                color: 'var(--text-secondary)', 
+                fontSize: 'var(--font-size-sm)',
+                borderBottom: '1px solid var(--border-color)'
+            }}>
+                <span>{likes.length} {likes.length === 1 ? 'Like' : 'Likes'}</span>
+                <span 
+                    onClick={() => setShowComments(!showComments)} 
+                    style={{cursor: 'pointer'}}
+                    className="post-stat-clickable"
+                >
+                    {comments.length} {comments.length === 1 ? 'Comment' : 'Comments'}
+                </span>
             </div>
-            <div style={{ marginTop: '10px', borderTop: '1px solid #eee', paddingTop: '10px', display: 'flex', gap: '20px' }}>
-                <button onClick={handleLike} style={{fontWeight: hasLiked ? 'bold' : 'normal', color: hasLiked ? '' : '#fff'}}>Like</button>
-                <button onClick={() => setShowComments(!showComments)} style={{color: '#fff'}}>Comment</button>
-                <button onClick={handleShare} style={{color: '#fff'}}>Share</button>
+            
+            {/* Post Actions */}
+            <div className="post-actions">
+                <button 
+                    onClick={handleLike} 
+                    className={`post-action ${hasLiked ? 'liked' : ''}`}
+                >
+                    <span>{hasLiked ? '❤️' : '🤍'}</span>
+                    Like
+                </button>
+                <button 
+                    onClick={() => setShowComments(!showComments)} 
+                    className="post-action"
+                >
+                    <span>💬</span>
+                    Comment
+                </button>
+                <button 
+                    onClick={handleShare} 
+                    className="post-action"
+                >
+                    <span>📤</span>
+                    Share
+                </button>
             </div>
+            
+            {/* Comments Section */}
             {showComments && (
-                <div style={{marginTop: '10px'}}>
-                    <form onSubmit={handleCommentSubmit} style={{display: 'flex', gap: '10px'}}>
-                        <input type="text" value={commentText} onChange={(e) => setCommentText(e.target.value)} placeholder="Write a comment..." style={{flexGrow: 1, padding: '8px'}}/>
-                        <button type="submit" style={{padding: '8px'}}>Post</button>
+                <div className="card-footer">
+                    <form onSubmit={handleCommentSubmit} className="d-flex gap-2 mb-3">
+                        <input 
+                            type="text" 
+                            value={commentText} 
+                            onChange={(e) => setCommentText(e.target.value)} 
+                            placeholder="Write a comment..." 
+                            className="form-control"
+                            style={{flexGrow: 1}}
+                        />
+                        <button type="submit" className="btn btn-primary btn-sm">
+                            Post
+                        </button>
                     </form>
-                    <div style={{marginTop: '10px'}}>
+                    <div className="comments-list">
                         {comments.map((comment, index) => (
-                            // **NEW**: Pass navigation function down
                             <Comment key={index} comment={comment} navigateToProfile={navigateToProfile} />
                         ))}
+                        {comments.length === 0 && (
+                            <p style={{ 
+                                textAlign: 'center', 
+                                color: 'var(--text-secondary)', 
+                                fontStyle: 'italic',
+                                margin: 'var(--spacing-md) 0'
+                            }}>
+                                No comments yet. Be the first to comment!
+                            </p>
+                        )}
                     </div>
                 </div>
             )}
