@@ -622,3 +622,306 @@ body {
 
 .w-100 { width: 100%; }
 .h-100 { height: 100%; }
+
+/* Poll Components Styles */
+.poll-card {
+    margin-bottom: var(--spacing-lg);
+}
+
+.poll-badge {
+    background: var(--primary-color);
+    color: white;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+}
+
+.poll-question {
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-primary);
+    margin-bottom: var(--spacing-sm);
+    line-height: 1.4;
+}
+
+.poll-description {
+    color: var(--text-secondary);
+    margin-bottom: var(--spacing-md);
+    line-height: 1.5;
+}
+
+.poll-options {
+    margin-bottom: var(--spacing-md);
+}
+
+.poll-option {
+    margin-bottom: var(--spacing-sm);
+}
+
+.poll-option-label {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-sm) var(--spacing-md);
+    border: 2px solid var(--border-color);
+    border-radius: var(--border-radius);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    background: var(--bg-card);
+}
+
+.poll-option-label:hover {
+    border-color: var(--primary-color);
+    background: var(--bg-hover);
+}
+
+.poll-option-label.selected {
+    border-color: var(--primary-color);
+    background: var(--primary-light);
+}
+
+.poll-option-label input {
+    margin: 0;
+}
+
+.poll-option-text {
+    flex: 1;
+    font-weight: var(--font-weight-medium);
+}
+
+.poll-option-result {
+    margin-bottom: var(--spacing-xs);
+}
+
+.poll-option-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--spacing-xs);
+}
+
+.poll-option-stats {
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+    font-weight: var(--font-weight-medium);
+}
+
+.poll-progress {
+    height: 8px;
+    background: var(--bg-secondary);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.poll-progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, var(--primary-color), var(--primary-light));
+    transition: width 0.5s ease;
+}
+
+.poll-actions {
+    margin-bottom: var(--spacing-md);
+}
+
+.poll-meta {
+    padding-top: var(--spacing-sm);
+    border-top: 1px solid var(--border-color);
+}
+
+.poll-total-votes {
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+    font-weight: var(--font-weight-medium);
+}
+
+.poll-expiry {
+    font-size: var(--font-size-sm);
+    color: var(--warning-color);
+    font-weight: var(--font-weight-medium);
+}
+
+.poll-expiry.expired {
+    color: var(--error-color);
+}
+
+/* Create Content Tabs */
+.create-content-container {
+    width: 100%;
+}
+
+.create-tabs {
+    display: flex;
+    margin-bottom: var(--spacing-md);
+    border-bottom: 2px solid var(--border-color);
+}
+
+.tab-button {
+    flex: 1;
+    padding: var(--spacing-sm) var(--spacing-md);
+    border: none;
+    background: none;
+    color: var(--text-secondary);
+    font-weight: var(--font-weight-medium);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border-bottom: 2px solid transparent;
+}
+
+.tab-button:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+}
+
+.tab-button.active {
+    color: var(--primary-color);
+    border-bottom-color: var(--primary-color);
+}
+
+.create-content {
+    animation: fadeIn 0.3s ease;
+}
+
+/* Create Poll Specific Styles */
+.create-poll-container {
+    width: 100%;
+}
+
+.poll-options-container {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+}
+
+.poll-option-input {
+    display: flex;
+    gap: var(--spacing-sm);
+    align-items: center;
+}
+
+.poll-option-input input {
+    flex: 1;
+}
+
+.poll-settings {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-md);
+    background: var(--bg-secondary);
+    border-radius: var(--border-radius);
+}
+
+.setting-item {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+}
+
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    cursor: pointer;
+    font-weight: var(--font-weight-medium);
+}
+
+.expiry-settings {
+    margin-left: var(--spacing-lg);
+    margin-top: var(--spacing-xs);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+}
+
+.poll-summary {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+}
+
+/* Feed Filters */
+.feed-filters {
+    display: flex;
+    gap: var(--spacing-sm);
+    justify-content: center;
+    margin-bottom: var(--spacing-lg);
+}
+
+.filter-btn {
+    padding: var(--spacing-sm) var(--spacing-lg);
+    border: 2px solid var(--border-color);
+    background: var(--bg-card);
+    color: var(--text-secondary);
+    border-radius: var(--border-radius);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-weight: var(--font-weight-medium);
+    flex: 1;
+    max-width: 120px;
+}
+
+.filter-btn:hover {
+    border-color: var(--primary-color);
+    color: var(--text-primary);
+}
+
+.filter-btn.active {
+    border-color: var(--primary-color);
+    background: var(--primary-color);
+    color: white;
+}
+
+/* Feed Items */
+.feed-item {
+    margin-bottom: var(--spacing-lg);
+}
+
+/* Responsive Design for Polls */
+@media (max-width: 768px) {
+    .poll-option-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: var(--spacing-xs);
+    }
+    
+    .poll-option-stats {
+        align-self: flex-end;
+    }
+    
+    .create-tabs {
+        flex-direction: column;
+    }
+    
+    .tab-button {
+        text-align: left;
+        border-bottom: 1px solid var(--border-color);
+        border-right: none;
+    }
+    
+    .tab-button.active {
+        border-bottom-color: var(--border-color);
+        border-left: 3px solid var(--primary-color);
+        background: var(--bg-hover);
+    }
+    
+    .poll-option-input {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .expiry-settings {
+        margin-left: 0;
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .feed-filters {
+        flex-direction: column;
+        max-width: none;
+    }
+    
+    .filter-btn {
+        max-width: none;
+    }
+}

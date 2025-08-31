@@ -1,6 +1,7 @@
 import React from 'react';
-import CreatePost from '../components/CreatePost';
+import CreateContent from '../components/CreateContent';
 import Post from '../components/Post';
+import Poll from '../components/Poll';
 import { apiCall } from '../config/api';
 import { auth } from '../App';
 
@@ -36,7 +37,7 @@ function ConnectionRequests({ requests, navigateToProfile }) {
         <div className="card fade-in">
             <div className="card-header">
                 <h3 style={{ margin: 0, fontSize: 'var(--font-size-lg)', fontWeight: 'var(--font-weight-semibold)' }}>
-                    🤝 Connection Requests
+                    Connection Requests
                 </h3>
             </div>
             <div className="card-body">
@@ -71,17 +72,18 @@ function ConnectionRequests({ requests, navigateToProfile }) {
 }
 
 export default function HomePage({ userData, onSignOut, navigateToProfile, navigateToSearch, navigateToNotifications }) {
-    const [posts, setPosts] = React.useState([]);
+    const [feedItems, setFeedItems] = React.useState([]);
     const [loading, setLoading] = React.useState(true);
     const [error, setError] = React.useState('');
+    const [feedFilter, setFeedFilter] = React.useState('all'); // 'all', 'posts', 'polls'
 
-    const fetchPosts = async () => {
-        if (posts.length === 0) setLoading(true); 
+    const fetchFeed = async () => {
+        if (feedItems.length === 0) setLoading(true); 
         try {
-            const response = await apiCall('/api/posts');
-            if (!response.ok) throw new Error('Failed to fetch posts from server.');
+            const response = await apiCall(`/api/feed?type=${feedFilter}`);
+            if (!response.ok) throw new Error('Failed to fetch feed from server.');
             const data = await response.json();
-            setPosts(data);
+            setFeedItems(data);
         } catch (err) {
             setError(err.message);
         } finally {
@@ -89,24 +91,35 @@ export default function HomePage({ userData, onSignOut, navigateToProfile, navig
         }
     };
     
+    const handleContentUpdate = () => {
+        fetchFeed();
+    };
+
     const handlePostUpdate = (updatedPost) => {
-        setPosts(currentPosts => 
-            currentPosts.map(p => p.id === updatedPost.id ? updatedPost : p)
+        setFeedItems(currentItems => 
+            currentItems.map(item => 
+                item.type === 'post' && item.id === updatedPost.id ? updatedPost : item
+            )
         );
     };
 
     const handlePostDelete = (deletedPostId) => {
-        setPosts(currentPosts => 
-            currentPosts.filter(p => p.id !== deletedPostId)
+        setFeedItems(currentItems => 
+            currentItems.filter(item => 
+                !(item.type === 'post' && item.id === deletedPostId)
+            )
         );
     };
 
+    const handlePollUpdate = () => {
+        fetchFeed();
+    };
+
     React.useEffect(() => {
-        fetchPosts();
-    }, []);
+        fetchFeed();
+    }, [feedFilter]);
 
     const notificationCount = (userData.connectionRequestsReceived || []).length;
-
 
     return (
         <div className="edulink-app">
@@ -119,7 +132,7 @@ export default function HomePage({ userData, onSignOut, navigateToProfile, navig
                             onClick={navigateToNotifications} 
                             className="btn btn-secondary notification-button"
                         >
-                            🔔 Notifications
+                            Notifications
                             {notificationCount > 0 && 
                                 <span className="notification-badge">
                                     {notificationCount}
@@ -127,13 +140,13 @@ export default function HomePage({ userData, onSignOut, navigateToProfile, navig
                             }
                         </button>
                         <button onClick={navigateToSearch} className="btn btn-secondary">
-                            🔍 Search
+                            Search
                         </button>
                         <button onClick={() => navigateToProfile(auth.currentUser.uid)} className="btn btn-secondary">
-                            👤 My Profile
+                            My Profile
                         </button>
                         <button onClick={onSignOut} className="btn btn-outline">
-                            🚪 Sign Out
+                            Sign Out
                         </button>
                     </div>
                 </div>
@@ -147,10 +160,39 @@ export default function HomePage({ userData, onSignOut, navigateToProfile, navig
                     navigateToProfile={navigateToProfile}
                 />
                 
-                {/* Create Post Section */}
+                {/* Create Content Section */}
                 <div className="card fade-in" style={{ marginBottom: 'var(--spacing-lg)' }}>
                     <div className="card-body">
-                        <CreatePost onPostCreated={fetchPosts} />
+                        <CreateContent onContentCreated={handleContentUpdate} />
+                    </div>
+                </div>
+
+                {/* Feed Filter */}
+                <div className="card" style={{ marginBottom: 'var(--spacing-lg)' }}>
+                    <div className="card-body">
+                        <div className="feed-filters" style={{ display: 'flex', gap: 'var(--spacing-sm)', justifyContent: 'center' }}>
+                            <button 
+                                className={`btn ${feedFilter === 'all' ? 'btn-primary' : 'btn-secondary'}`}
+                                onClick={() => setFeedFilter('all')}
+                                style={{ flex: 1 }}
+                            >
+                                All
+                            </button>
+                            <button 
+                                className={`btn ${feedFilter === 'posts' ? 'btn-primary' : 'btn-secondary'}`}
+                                onClick={() => setFeedFilter('posts')}
+                                style={{ flex: 1 }}
+                            >
+                                Posts
+                            </button>
+                            <button 
+                                className={`btn ${feedFilter === 'polls' ? 'btn-primary' : 'btn-secondary'}`}
+                                onClick={() => setFeedFilter('polls')}
+                                style={{ flex: 1 }}
+                            >
+                                Polls
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -170,27 +212,36 @@ export default function HomePage({ userData, onSignOut, navigateToProfile, navig
                     </div>
                 )}
                 
-                {/* Posts Feed */}
-                <div className="posts-feed">
-                    {posts.map((post, index) => (
-                        <div key={post.id} className="fade-in" style={{ animationDelay: `${index * 0.1}s` }}>
-                            <Post 
-                                post={post} 
-                                onPostUpdate={handlePostUpdate}
-                                onPostDelete={handlePostDelete}
-                                navigateToProfile={navigateToProfile}
-                            />
+                {/* Feed Items */}
+                <div className="feed">
+                    {feedItems.map((item, index) => (
+                        <div key={`${item.type}-${item.id}`} className="fade-in" style={{ animationDelay: `${index * 0.1}s` }}>
+                            {item.type === 'post' ? (
+                                <Post 
+                                    post={item} 
+                                    onPostUpdate={handlePostUpdate}
+                                    onPostDelete={handlePostDelete}
+                                    navigateToProfile={navigateToProfile}
+                                />
+                            ) : (
+                                <Poll 
+                                    poll={item} 
+                                    onPollUpdate={handlePollUpdate}
+                                />
+                            )}
                         </div>
                     ))}
                     
-                    {posts.length === 0 && !loading && (
+                    {feedItems.length === 0 && !loading && (
                         <div className="card text-center">
                             <div className="card-body">
                                 <h3 style={{ color: 'var(--text-secondary)', margin: 0 }}>
-                                    📝 No posts yet
+                                    {feedFilter === 'all' ? 'No content yet' : 
+                                     feedFilter === 'posts' ? 'No posts yet' : 'No polls yet'}
                                 </h3>
                                 <p style={{ color: 'var(--text-secondary)', margin: 'var(--spacing-sm) 0 0 0' }}>
-                                    Be the first to share something!
+                                    {feedFilter === 'all' ? 'Be the first to share something!' :
+                                     feedFilter === 'posts' ? 'Create your first post!' : 'Create your first poll!'}
                                 </p>
                             </div>
                         </div>

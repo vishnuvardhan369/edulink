@@ -825,6 +825,339 @@ app.get('/api/users/:userId/connections', async (req, res) => {
     }
 });
 
+// POLLS ROUTES
+app.post('/api/polls', async (req, res) => {
+    try {
+        const { userId, question, description, options, allowMultipleVotes, expiresAt } = req.body;
+        if (!userId || !question || !options || options.length < 2) {
+            return res.status(400).send({ error: 'userId, question, and at least 2 options are required.' });
+        }
+        if (options.length > 20) {
+            return res.status(400).send({ error: 'Maximum 20 options allowed.' });
+        }
+        
+        // Check if user exists, create if not
+        const checkUserQuery = `SELECT user_id FROM users WHERE user_id = $1`;
+        const userResult = await client.query(checkUserQuery, [userId]);
+        
+        if (userResult.rows.length === 0) {
+            const createUserQuery = `
+                INSERT INTO users (user_id, username, email, display_name, display_name_lowercase, created_at) 
+                VALUES ($1, $2, $3, $4, $5, NOW())
+            `;
+            const tempUsername = `user_${userId.slice(-8)}`;
+            const tempEmail = `${userId}@temp.com`;
+            const tempDisplayName = `User ${userId.slice(-8)}`;
+            await client.query(createUserQuery, [userId, tempUsername, tempEmail, tempDisplayName, tempDisplayName.toLowerCase()]);
+        }
+        
+        // Begin transaction
+        await client.query('BEGIN');
+        
+        try {
+            // Insert poll
+            const insertPollQuery = `
+                INSERT INTO polls (user_id, question, description, allow_multiple_votes, expires_at) 
+                VALUES ($1, $2, $3, $4, $5) 
+                RETURNING poll_id, created_at
+            `;
+            const pollResult = await client.query(insertPollQuery, [
+                userId, 
+                question, 
+                description, 
+                allowMultipleVotes || false,
+                expiresAt ? new Date(expiresAt) : null
+            ]);
+            const pollId = pollResult.rows[0].poll_id;
+            
+            // Insert poll options
+            const insertOptionQuery = `
+                INSERT INTO poll_options (poll_id, option_text, option_order) 
+                VALUES ($1, $2, $3)
+            `;
+            for (let i = 0; i < options.length; i++) {
+                await client.query(insertOptionQuery, [pollId, options[i], i + 1]);
+            }
+            
+            await client.query('COMMIT');
+            res.status(201).send({ message: 'Poll created successfully', pollId });
+        } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        }
+    } catch (error) {
+        console.error('Error creating poll:', error);
+        res.status(500).send({ error: 'Failed to create poll.' });
+    }
+});
+
+app.get('/api/polls', async (req, res) => {
+    try {
+        const pollsQuery = `
+            SELECT 
+                p.poll_id as id,
+                p.user_id as "userId",
+                p.question,
+                p.description,
+                p.allow_multiple_votes as "allowMultipleVotes",
+                p.created_at,
+                p.expires_at as "expiresAt",
+                u.username,
+                u.display_name as "displayName",
+                u.profile_picture_url as "profilePictureUrl",
+                COALESCE(
+                    json_agg(
+                        json_build_object(
+                            'optionId', po.option_id,
+                            'text', po.option_text,
+                            'order', po.option_order,
+                            'votes', COALESCE(vote_counts.vote_count, 0)
+                        )
+                        ORDER BY po.option_order
+                    ) FILTER (WHERE po.option_id IS NOT NULL), 
+                    '[]'::json
+                ) as options,
+                COALESCE(
+                    json_agg(
+                        DISTINCT pv.user_id
+                    ) FILTER (WHERE pv.user_id IS NOT NULL), 
+                    '[]'::json
+                ) as "userVotes"
+            FROM polls p
+            JOIN users u ON p.user_id = u.user_id
+            LEFT JOIN poll_options po ON p.poll_id = po.poll_id
+            LEFT JOIN poll_votes pv ON p.poll_id = pv.poll_id
+            LEFT JOIN (
+                SELECT 
+                    option_id,
+                    COUNT(*) as vote_count
+                FROM poll_votes
+                GROUP BY option_id
+            ) vote_counts ON po.option_id = vote_counts.option_id
+            GROUP BY p.poll_id, p.user_id, p.question, p.description, p.allow_multiple_votes, p.created_at, p.expires_at, u.username, u.display_name, u.profile_picture_url
+            ORDER BY p.created_at DESC
+        `;
+        
+        const result = await client.query(pollsQuery);
+        
+        const polls = result.rows.map(row => ({
+            ...row,
+            createdAt: new Date(row.created_at).getTime(),
+            expiresAt: row.expiresAt ? new Date(row.expiresAt).getTime() : null
+        }));
+        
+        res.status(200).send(polls);
+    } catch (error) {
+        console.error('Error fetching polls:', error);
+        res.status(500).send({ error: 'Failed to fetch polls.' });
+    }
+});
+
+app.post('/api/polls/:pollId/vote', async (req, res) => {
+    try {
+        const { pollId } = req.params;
+        const { userId, optionIds } = req.body;
+        if (!userId || !optionIds || !Array.isArray(optionIds) || optionIds.length === 0) {
+            return res.status(400).send({ error: 'userId and optionIds array are required.' });
+        }
+        
+        // Get poll details
+        const pollQuery = `SELECT allow_multiple_votes FROM polls WHERE poll_id = $1`;
+        const pollResult = await client.query(pollQuery, [pollId]);
+        if (pollResult.rows.length === 0) {
+            return res.status(404).send({ error: 'Poll not found.' });
+        }
+        
+        const allowMultipleVotes = pollResult.rows[0].allow_multiple_votes;
+        
+        // Validate vote count
+        if (!allowMultipleVotes && optionIds.length > 1) {
+            return res.status(400).send({ error: 'This poll only allows one vote per user.' });
+        }
+        
+        // Begin transaction
+        await client.query('BEGIN');
+        
+        try {
+            // Remove existing votes for this user on this poll
+            const deleteVotesQuery = `DELETE FROM poll_votes WHERE poll_id = $1 AND user_id = $2`;
+            await client.query(deleteVotesQuery, [pollId, userId]);
+            
+            // Add new votes
+            const insertVoteQuery = `
+                INSERT INTO poll_votes (poll_id, option_id, user_id) 
+                VALUES ($1, $2, $3)
+            `;
+            for (const optionId of optionIds) {
+                await client.query(insertVoteQuery, [pollId, optionId, userId]);
+            }
+            
+            await client.query('COMMIT');
+            res.status(200).send({ message: 'Vote recorded successfully.' });
+        } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        }
+    } catch (error) {
+        console.error('Error voting on poll:', error);
+        res.status(500).send({ error: 'Failed to vote on poll.' });
+    }
+});
+
+app.delete('/api/polls/:pollId', async (req, res) => {
+    try {
+        const { pollId } = req.params;
+        const { userId } = req.body;
+        if (!userId) return res.status(400).send({ error: 'User ID is required.' });
+        
+        // Check if poll exists and belongs to user
+        const checkPollQuery = `SELECT user_id FROM polls WHERE poll_id = $1`;
+        const checkResult = await client.query(checkPollQuery, [pollId]);
+        
+        if (checkResult.rows.length === 0) {
+            return res.status(404).send({ error: 'Poll not found.' });
+        }
+        
+        if (checkResult.rows[0].user_id !== userId) {
+            return res.status(403).send({ error: 'Forbidden' });
+        }
+        
+        // Delete poll (cascade will handle related records)
+        const deletePollQuery = `DELETE FROM polls WHERE poll_id = $1`;
+        await client.query(deletePollQuery, [pollId]);
+        
+        res.status(200).send({ message: 'Poll deleted successfully.' });
+    } catch (error) {
+        console.error('Error deleting poll:', error);
+        res.status(500).send({ error: 'Failed to delete poll.' });
+    }
+});
+
+// COMBINED FEED (POSTS + POLLS)
+app.get('/api/feed', async (req, res) => {
+    try {
+        const { type = 'all' } = req.query; // 'all', 'posts', 'polls'
+        
+        let feedItems = [];
+        
+        if (type === 'all' || type === 'posts') {
+            // Fetch posts
+            const postsQuery = `
+                SELECT 
+                    'post' as type,
+                    p.post_id as id,
+                    p.user_id as "userId",
+                    p.description,
+                    p.created_at,
+                    u.username,
+                    u.display_name as "displayName",
+                    u.profile_picture_url as "profilePictureUrl",
+                    COALESCE(
+                        json_agg(
+                            DISTINCT pi.image_url
+                        ) FILTER (WHERE pi.image_url IS NOT NULL), 
+                        '[]'::json
+                    ) as "imageUrls",
+                    COALESCE(
+                        json_agg(
+                            DISTINCT jsonb_build_object(
+                                'userId', l.user_id
+                            )
+                        ) FILTER (WHERE l.user_id IS NOT NULL), 
+                        '[]'::json
+                    ) as likes,
+                    COALESCE(
+                        json_agg(
+                            DISTINCT jsonb_build_object(
+                                'userId', c.user_id,
+                                'text', c.comment_text,
+                                'createdAt', EXTRACT(EPOCH FROM c.created_at) * 1000
+                            )
+                        ) FILTER (WHERE c.comment_text IS NOT NULL), 
+                        '[]'::json
+                    ) as comments
+                FROM posts p
+                JOIN users u ON p.user_id = u.user_id
+                LEFT JOIN post_images pi ON p.post_id = pi.post_id
+                LEFT JOIN likes l ON p.post_id = l.post_id
+                LEFT JOIN comments c ON p.post_id = c.post_id
+                GROUP BY p.post_id, p.user_id, p.description, p.created_at, u.username, u.display_name, u.profile_picture_url
+            `;
+            
+            const postsResult = await client.query(postsQuery);
+            const posts = postsResult.rows.map(row => ({
+                ...row,
+                createdAt: new Date(row.created_at).getTime()
+            }));
+            feedItems = feedItems.concat(posts);
+        }
+        
+        if (type === 'all' || type === 'polls') {
+            // Fetch polls
+            const pollsQuery = `
+                SELECT 
+                    'poll' as type,
+                    p.poll_id as id,
+                    p.user_id as "userId",
+                    p.question,
+                    p.description,
+                    p.allow_multiple_votes as "allowMultipleVotes",
+                    p.created_at,
+                    p.expires_at as "expiresAt",
+                    u.username,
+                    u.display_name as "displayName",
+                    u.profile_picture_url as "profilePictureUrl",
+                    COALESCE(
+                        json_agg(
+                            json_build_object(
+                                'optionId', po.option_id,
+                                'text', po.option_text,
+                                'order', po.option_order,
+                                'votes', COALESCE(vote_counts.vote_count, 0)
+                            )
+                            ORDER BY po.option_order
+                        ) FILTER (WHERE po.option_id IS NOT NULL), 
+                        '[]'::json
+                    ) as options,
+                    COALESCE(
+                        json_agg(
+                            DISTINCT pv.user_id
+                        ) FILTER (WHERE pv.user_id IS NOT NULL), 
+                        '[]'::json
+                    ) as "userVotes"
+                FROM polls p
+                JOIN users u ON p.user_id = u.user_id
+                LEFT JOIN poll_options po ON p.poll_id = po.poll_id
+                LEFT JOIN poll_votes pv ON p.poll_id = pv.poll_id
+                LEFT JOIN (
+                    SELECT 
+                        option_id,
+                        COUNT(*) as vote_count
+                    FROM poll_votes
+                    GROUP BY option_id
+                ) vote_counts ON po.option_id = vote_counts.option_id
+                GROUP BY p.poll_id, p.user_id, p.question, p.description, p.allow_multiple_votes, p.created_at, p.expires_at, u.username, u.display_name, u.profile_picture_url
+            `;
+            
+            const pollsResult = await client.query(pollsQuery);
+            const polls = pollsResult.rows.map(row => ({
+                ...row,
+                createdAt: new Date(row.created_at).getTime(),
+                expiresAt: row.expiresAt ? new Date(row.expiresAt).getTime() : null
+            }));
+            feedItems = feedItems.concat(polls);
+        }
+        
+        // Sort by creation time (newest first)
+        feedItems.sort((a, b) => b.createdAt - a.createdAt);
+        
+        res.status(200).send(feedItems);
+    } catch (error) {
+        console.error('Error fetching feed:', error);
+        res.status(500).send({ error: 'Failed to fetch feed.' });
+    }
+});
+
 // PLACEHOLDER CHAT/MESSAGING ENDPOINTS (to be implemented later)
 app.get('/api/users/:userId/chats', async (req, res) => {
     try {

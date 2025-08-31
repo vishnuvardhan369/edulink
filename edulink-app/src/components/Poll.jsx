@@ -1,0 +1,229 @@
+import React from 'react';
+import { auth } from '../App';
+import { apiCall } from '../config/api';
+
+export default function Poll({ poll, onPollUpdate }) {
+    const [userVotes, setUserVotes] = React.useState([]);
+    const [isVoting, setIsVoting] = React.useState(false);
+    const [showResults, setShowResults] = React.useState(false);
+    
+    const currentUserId = auth.currentUser?.uid;
+    const hasVoted = poll.userVotes && poll.userVotes.includes(currentUserId);
+    const isExpired = poll.expiresAt && new Date() > new Date(poll.expiresAt);
+    const isOwner = poll.userId === currentUserId;
+    
+    // Calculate total votes
+    const totalVotes = poll.options.reduce((sum, option) => sum + option.votes, 0);
+    
+    React.useEffect(() => {
+        // Initialize user votes if they've already voted
+        if (hasVoted) {
+            // Find which options this user voted for
+            const userOptionVotes = poll.options
+                .filter(option => poll.userVotes.includes(currentUserId))
+                .map(option => option.optionId);
+            setUserVotes(userOptionVotes);
+            setShowResults(true);
+        }
+    }, [poll, currentUserId, hasVoted]);
+    
+    const handleVoteChange = (optionId) => {
+        if (isExpired || isVoting) return;
+        
+        if (poll.allowMultipleVotes) {
+            setUserVotes(prev => 
+                prev.includes(optionId) 
+                    ? prev.filter(id => id !== optionId)
+                    : [...prev, optionId]
+            );
+        } else {
+            setUserVotes([optionId]);
+        }
+    };
+    
+    const submitVote = async () => {
+        if (userVotes.length === 0 || isVoting) return;
+        
+        setIsVoting(true);
+        try {
+            const response = await apiCall(`/api/polls/${poll.id}/vote`, {
+                method: 'POST',
+                body: JSON.stringify({
+                    userId: currentUserId,
+                    optionIds: userVotes
+                })
+            });
+            
+            if (response.ok) {
+                setShowResults(true);
+                if (onPollUpdate) onPollUpdate();
+            } else {
+                throw new Error('Failed to submit vote');
+            }
+        } catch (error) {
+            console.error('Error voting:', error);
+            alert('Failed to submit vote. Please try again.');
+        } finally {
+            setIsVoting(false);
+        }
+    };
+    
+    const deletePoll = async () => {
+        if (!isOwner || !confirm('Are you sure you want to delete this poll?')) return;
+        
+        try {
+            const response = await apiCall(`/api/polls/${poll.id}`, {
+                method: 'DELETE',
+                body: JSON.stringify({ userId: currentUserId })
+            });
+            
+            if (response.ok) {
+                if (onPollUpdate) onPollUpdate();
+            } else {
+                throw new Error('Failed to delete poll');
+            }
+        } catch (error) {
+            console.error('Error deleting poll:', error);
+            alert('Failed to delete poll. Please try again.');
+        }
+    };
+    
+    const formatTimeRemaining = (expiresAt) => {
+        const now = new Date();
+        const expiry = new Date(expiresAt);
+        const diff = expiry - now;
+        
+        if (diff <= 0) return 'Expired';
+        
+        const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+        const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+        
+        if (days > 0) return `${days}d ${hours}h remaining`;
+        if (hours > 0) return `${hours}h ${minutes}m remaining`;
+        return `${minutes}m remaining`;
+    };
+    
+    return (
+        <div className="card poll-card">
+            <div className="card-header">
+                <div className="d-flex align-items-center justify-content-between">
+                    <div className="d-flex align-items-center gap-3">
+                        <div className="avatar">
+                            <img 
+                                src={poll.profilePictureUrl || 'https://via.placeholder.com/40'} 
+                                alt={poll.displayName} 
+                                className="avatar-img"
+                            />
+                        </div>
+                        <div>
+                            <h4 className="card-title mb-0">{poll.displayName}</h4>
+                            <p className="card-subtitle">@{poll.username}</p>
+                        </div>
+                    </div>
+                    <div className="d-flex align-items-center gap-2">
+                        <span className="poll-badge">Poll</span>
+                        {isOwner && (
+                            <button 
+                                className="btn btn-sm btn-outline-danger"
+                                onClick={deletePoll}
+                                style={{ padding: '4px 8px' }}
+                            >
+                                Delete
+                            </button>
+                        )}
+                    </div>
+                </div>
+            </div>
+            
+            <div className="card-body">
+                <h3 className="poll-question">{poll.question}</h3>
+                {poll.description && (
+                    <p className="poll-description">{poll.description}</p>
+                )}
+                
+                <div className="poll-options">
+                    {poll.options.map((option) => {
+                        const percentage = totalVotes > 0 ? (option.votes / totalVotes) * 100 : 0;
+                        const isSelected = userVotes.includes(option.optionId);
+                        
+                        return (
+                            <div key={option.optionId} className="poll-option">
+                                {!showResults && !isExpired ? (
+                                    <label className={`poll-option-label ${isSelected ? 'selected' : ''}`}>
+                                        <input
+                                            type={poll.allowMultipleVotes ? 'checkbox' : 'radio'}
+                                            name={`poll-${poll.id}`}
+                                            checked={isSelected}
+                                            onChange={() => handleVoteChange(option.optionId)}
+                                            disabled={isVoting}
+                                        />
+                                        <span className="poll-option-text">{option.text}</span>
+                                    </label>
+                                ) : (
+                                    <div className="poll-option-result">
+                                        <div className="poll-option-header">
+                                            <span className="poll-option-text">{option.text}</span>
+                                            <span className="poll-option-stats">
+                                                {option.votes} votes ({percentage.toFixed(1)}%)
+                                            </span>
+                                        </div>
+                                        <div className="poll-progress">
+                                            <div 
+                                                className="poll-progress-bar"
+                                                style={{ width: `${percentage}%` }}
+                                            ></div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+                
+                {!showResults && !isExpired && (
+                    <div className="poll-actions">
+                        <button 
+                            className="btn btn-primary"
+                            onClick={submitVote}
+                            disabled={userVotes.length === 0 || isVoting}
+                        >
+                            {isVoting ? 'Submitting...' : 'Submit Vote'}
+                        </button>
+                        {poll.allowMultipleVotes && (
+                            <small className="text-muted ms-3">
+                                You can select multiple options
+                            </small>
+                        )}
+                    </div>
+                )}
+                
+                <div className="poll-meta">
+                    <div className="d-flex justify-content-between align-items-center">
+                        <span className="poll-total-votes">
+                            {totalVotes} total {totalVotes === 1 ? 'vote' : 'votes'}
+                        </span>
+                        <div className="d-flex align-items-center gap-3">
+                            {poll.expiresAt && (
+                                <span className={`poll-expiry ${isExpired ? 'expired' : ''}`}>
+                                    {formatTimeRemaining(poll.expiresAt)}
+                                </span>
+                            )}
+                            <span className="post-time">
+                                {new Date(poll.createdAt).toLocaleDateString()}
+                            </span>
+                        </div>
+                    </div>
+                    {showResults && !hasVoted && (
+                        <button 
+                            className="btn btn-sm btn-outline-secondary mt-2"
+                            onClick={() => setShowResults(false)}
+                        >
+                            Back to Vote
+                        </button>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+}
