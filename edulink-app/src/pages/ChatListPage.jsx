@@ -1,6 +1,7 @@
 import React from 'react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db, auth } from '../App';
+import { apiCall } from '../config/api';
 
 // Helper component to display a single chat conversation in the list
 function ChatListItem({ chat, navigateToChat }) {
@@ -46,7 +47,7 @@ export default function ChatListPage({ navigateToChat, navigateToHome }) {
     React.useEffect(() => {
         const fetchChats = async () => {
             try {
-                const response = await fetch(`https://edulink-g0gqgxhhezfjbzg4.southindia-01.azurewebsites.net/api/users/${currentUser.uid}/chats`);
+                const response = await apiCall(`/api/users/${currentUser.uid}/chats`);
                 const data = await response.json();
                 setChats(data);
             } catch (error) {

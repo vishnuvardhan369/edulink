@@ -1,6 +1,7 @@
 import React from 'react';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db, auth } from '../App';
+import { apiCall } from '../config/api';
 
 // This is a helper hook to fetch profile data for any user
 function useProfileData(userId) {
@@ -61,9 +62,8 @@ export default function ProfilePage({ viewingProfileId, currentUserData, navigat
 
     const handleConnection = async (action) => {
         try {
-            const response = await fetch(`https://edulink-g0gqgxhhezfjbzg4.southindia-01.azurewebsites.net/api/users/${viewingProfileId}/${action}`, {
+            const response = await apiCall(`/api/users/${viewingProfileId}/${action}`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ currentUserId: currentUser.uid })
             });
             if (!response.ok) throw new Error(`Failed to ${action} user.`);
@@ -79,9 +79,8 @@ export default function ProfilePage({ viewingProfileId, currentUserData, navigat
         if (!file) return;
         setUploading(true);
         try {
-            const response = await fetch('https://edulink-g0gqgxhhezfjbzg4.southindia-01.azurewebsites.net/api/generate-upload-url', {
+            const response = await apiCall('/api/generate-upload-url', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ fileName: file.name })
             });
             if (!response.ok) throw new Error('Failed to get upload URL');

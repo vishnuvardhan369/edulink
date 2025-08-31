@@ -2,14 +2,30 @@
 const express = require('express');
 const cors = require('cors');
 require('dotenv').config(); 
+const { Client } = require('pg');
 const { BlobServiceClient, StorageSharedKeyCredential, BlobSASPermissions, generateBlobSASQueryParameters } = require('@azure/storage-blob');
 const admin = require('firebase-admin');
 
-// --- Initialize Firebase Admin ---
+// --- Initialize Firebase Admin (for authentication only) ---
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
 
 admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
-const db = admin.firestore();
+
+// --- PostgreSQL Database Setup ---
+const client = new Client({
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false
+  }
+});
+
+// Connect to PostgreSQL
+client.connect()
+  .then(() => console.log('Connected to Neon PostgreSQL database'))
+  .catch(err => {
+    console.error('Error connecting to PostgreSQL:', err);
+    process.exit(1);
+  });
 
 
 // --- Express Setup ---
@@ -86,37 +102,92 @@ app.post('/api/posts', async (req, res) => {
     try {
         const { userId, description, imageUrls } = req.body;
         if (!userId || !description) return res.status(400).send({ error: 'userId and description are required.' });
-        const newPost = {
-            userId, description,
-            imageUrls: imageUrls || [],
-            createdAt: admin.firestore.FieldValue.serverTimestamp(),
-            likes: [], comments: []
-        };
-        const postRef = await db.collection('posts').add(newPost);
-        res.status(201).send({ message: 'Post created successfully', postId: postRef.id });
+        
+        // Insert post into PostgreSQL
+        const insertPostQuery = `
+            INSERT INTO posts (user_id, description, created_at, updated_at) 
+            VALUES ($1, $2, NOW(), NOW()) 
+            RETURNING post_id, created_at
+        `;
+        const postResult = await client.query(insertPostQuery, [userId, description]);
+        const postId = postResult.rows[0].post_id;
+        
+        // Insert images if provided
+        if (imageUrls && imageUrls.length > 0) {
+            const insertImageQuery = `
+                INSERT INTO post_images (post_id, image_url, created_at) 
+                VALUES ($1, $2, NOW())
+            `;
+            for (const imageUrl of imageUrls) {
+                await client.query(insertImageQuery, [postId, imageUrl]);
+            }
+        }
+        
+        res.status(201).send({ message: 'Post created successfully', postId });
     } catch (error) {
+        console.error('Error creating post:', error);
         res.status(500).send({ error: 'Failed to create post.' });
     }
 });
 
 app.get('/api/posts', async (req, res) => {
     try {
-        const snapshot = await db.collection('posts').orderBy('createdAt', 'desc').get();
-        if (snapshot.empty) return res.status(200).send([]);
-        const posts = snapshot.docs.map(doc => {
-            const data = doc.data();
-            const comments = (data.comments || []).map(comment => ({
-                ...comment,
-                createdAt: comment.createdAt ? comment.createdAt.toMillis() : Date.now(),
-            }));
-            return { 
-                id: doc.id, ...data, 
-                createdAt: data.createdAt ? data.createdAt.toMillis() : Date.now(),
-                comments
-            };
-        });
+        const postsQuery = `
+            SELECT 
+                p.post_id as id,
+                p.user_id as "userId",
+                p.description,
+                p.created_at,
+                u.username,
+                u.display_name as "displayName",
+                u.profile_picture_url as "profilePictureUrl",
+                COALESCE(
+                    json_agg(
+                        DISTINCT pi.image_url ORDER BY pi.created_at
+                    ) FILTER (WHERE pi.image_url IS NOT NULL), 
+                    '[]'::json
+                ) as "imageUrls",
+                COALESCE(
+                    json_agg(
+                        DISTINCT jsonb_build_object(
+                            'userId', l.user_id
+                        )
+                    ) FILTER (WHERE l.user_id IS NOT NULL), 
+                    '[]'::json
+                ) as likes,
+                COALESCE(
+                    json_agg(
+                        DISTINCT jsonb_build_object(
+                            'userId', c.user_id,
+                            'text', c.comment_text,
+                            'createdAt', EXTRACT(EPOCH FROM c.created_at) * 1000
+                        ) ORDER BY jsonb_build_object(
+                            'userId', c.user_id,
+                            'text', c.comment_text,
+                            'createdAt', EXTRACT(EPOCH FROM c.created_at) * 1000
+                        )
+                    ) FILTER (WHERE c.comment_id IS NOT NULL), 
+                    '[]'::json
+                ) as comments
+            FROM posts p
+            JOIN users u ON p.user_id = u.user_id
+            LEFT JOIN post_images pi ON p.post_id = pi.post_id
+            LEFT JOIN likes l ON p.post_id = l.post_id
+            LEFT JOIN comments c ON p.post_id = c.post_id
+            GROUP BY p.post_id, p.user_id, p.description, p.created_at, u.username, u.display_name, u.profile_picture_url
+            ORDER BY p.created_at DESC
+        `;
+        
+        const result = await client.query(postsQuery);
+        
+        const posts = result.rows.map(row => ({
+            ...row,
+            createdAt: new Date(row.created_at).getTime()
+        }));
+        
         res.status(200).send(posts);
     } catch (error) {
+        console.error('Error fetching posts:', error);
         res.status(500).send({ error: 'Failed to fetch posts.' });
     }
 });
@@ -126,13 +197,26 @@ app.delete('/api/posts/:postId', async (req, res) => {
         const { postId } = req.params;
         const { userId } = req.body;
         if (!userId) return res.status(400).send({ error: 'User ID is required.' });
-        const postRef = db.collection('posts').doc(postId);
-        const doc = await postRef.get();
-        if (!doc.exists) return res.status(404).send({ error: 'Post not found.' });
-        if (doc.data().userId !== userId) return res.status(403).send({ error: 'Forbidden' });
-        await postRef.delete();
+        
+        // Check if post exists and belongs to user
+        const checkPostQuery = `SELECT user_id FROM posts WHERE post_id = $1`;
+        const checkResult = await client.query(checkPostQuery, [postId]);
+        
+        if (checkResult.rows.length === 0) {
+            return res.status(404).send({ error: 'Post not found.' });
+        }
+        
+        if (checkResult.rows[0].user_id !== userId) {
+            return res.status(403).send({ error: 'Forbidden' });
+        }
+        
+        // Delete post (cascade will handle related records)
+        const deletePostQuery = `DELETE FROM posts WHERE post_id = $1`;
+        await client.query(deletePostQuery, [postId]);
+        
         res.status(200).send({ message: 'Post deleted successfully.' });
     } catch (error) {
+        console.error('Error deleting post:', error);
         res.status(500).send({ error: 'Failed to delete post.' });
     }
 });
@@ -142,17 +226,31 @@ app.post('/api/posts/:postId/like', async (req, res) => {
         const { postId } = req.params;
         const { userId } = req.body;
         if (!userId) return res.status(400).send({ error: 'userId is required.' });
-        const postRef = db.collection('posts').doc(postId);
-        const doc = await postRef.get();
-        if (!doc.exists) return res.status(404).send({ error: 'Post not found.' });
-        const postData = doc.data();
-        await postRef.update({
-            likes: (postData.likes || []).includes(userId) 
-                ? admin.firestore.FieldValue.arrayRemove(userId) 
-                : admin.firestore.FieldValue.arrayUnion(userId)
-        });
+        
+        // Check if post exists
+        const checkPostQuery = `SELECT post_id FROM posts WHERE post_id = $1`;
+        const postResult = await client.query(checkPostQuery, [postId]);
+        if (postResult.rows.length === 0) {
+            return res.status(404).send({ error: 'Post not found.' });
+        }
+        
+        // Check if user already liked the post
+        const checkLikeQuery = `SELECT like_id FROM likes WHERE post_id = $1 AND user_id = $2`;
+        const likeResult = await client.query(checkLikeQuery, [postId, userId]);
+        
+        if (likeResult.rows.length > 0) {
+            // Unlike the post
+            const deleteLikeQuery = `DELETE FROM likes WHERE post_id = $1 AND user_id = $2`;
+            await client.query(deleteLikeQuery, [postId, userId]);
+        } else {
+            // Like the post
+            const insertLikeQuery = `INSERT INTO likes (post_id, user_id, created_at) VALUES ($1, $2, NOW())`;
+            await client.query(insertLikeQuery, [postId, userId]);
+        }
+        
         res.status(200).send({ message: 'Like status updated.' });
     } catch (error) {
+        console.error('Error updating like status:', error);
         res.status(500).send({ error: 'Failed to update like status.' });
     }
 });
@@ -162,22 +260,77 @@ app.post('/api/posts/:postId/comment', async (req, res) => {
         const { postId } = req.params;
         const { userId, text } = req.body;
         if (!userId || !text) return res.status(400).send({ error: 'userId and text are required.' });
-        const postRef = db.collection('posts').doc(postId);
-        const newComment = { userId, text, createdAt: new Date() };
-        await postRef.update({ comments: admin.firestore.FieldValue.arrayUnion(newComment) });
-        const updatedDoc = await postRef.get();
-        const data = updatedDoc.data();
-        const comments = (data.comments || []).map(comment => ({
-            ...comment,
-            createdAt: comment.createdAt ? comment.createdAt.toMillis() : Date.now(),
-        }));
-        const updatedPost = { 
-            id: updatedDoc.id, ...data,
-            createdAt: data.createdAt ? data.createdAt.toMillis() : Date.now(),
-            comments
+        
+        // Check if post exists
+        const checkPostQuery = `SELECT post_id FROM posts WHERE post_id = $1`;
+        const postResult = await client.query(checkPostQuery, [postId]);
+        if (postResult.rows.length === 0) {
+            return res.status(404).send({ error: 'Post not found.' });
+        }
+        
+        // Add comment
+        const insertCommentQuery = `
+            INSERT INTO comments (post_id, user_id, comment_text, created_at, updated_at) 
+            VALUES ($1, $2, $3, NOW(), NOW())
+        `;
+        await client.query(insertCommentQuery, [postId, userId, text]);
+        
+        // Get updated post with all data
+        const updatedPostQuery = `
+            SELECT 
+                p.post_id as id,
+                p.user_id as "userId",
+                p.description,
+                p.created_at,
+                u.username,
+                u.display_name as "displayName",
+                u.profile_picture_url as "profilePictureUrl",
+                COALESCE(
+                    json_agg(
+                        DISTINCT pi.image_url ORDER BY pi.created_at
+                    ) FILTER (WHERE pi.image_url IS NOT NULL), 
+                    '[]'::json
+                ) as "imageUrls",
+                COALESCE(
+                    json_agg(
+                        DISTINCT jsonb_build_object(
+                            'userId', l.user_id
+                        )
+                    ) FILTER (WHERE l.user_id IS NOT NULL), 
+                    '[]'::json
+                ) as likes,
+                COALESCE(
+                    json_agg(
+                        DISTINCT jsonb_build_object(
+                            'userId', c.user_id,
+                            'text', c.comment_text,
+                            'createdAt', EXTRACT(EPOCH FROM c.created_at) * 1000
+                        ) ORDER BY jsonb_build_object(
+                            'userId', c.user_id,
+                            'text', c.comment_text,
+                            'createdAt', EXTRACT(EPOCH FROM c.created_at) * 1000
+                        )
+                    ) FILTER (WHERE c.comment_id IS NOT NULL), 
+                    '[]'::json
+                ) as comments
+            FROM posts p
+            JOIN users u ON p.user_id = u.user_id
+            LEFT JOIN post_images pi ON p.post_id = pi.post_id
+            LEFT JOIN likes l ON p.post_id = l.post_id
+            LEFT JOIN comments c ON p.post_id = c.post_id
+            WHERE p.post_id = $1
+            GROUP BY p.post_id, p.user_id, p.description, p.created_at, u.username, u.display_name, u.profile_picture_url
+        `;
+        
+        const result = await client.query(updatedPostQuery, [postId]);
+        const updatedPost = {
+            ...result.rows[0],
+            createdAt: new Date(result.rows[0].created_at).getTime()
         };
+        
         res.status(201).send(updatedPost);
     } catch (error) {
+        console.error('Error adding comment:', error);
         res.status(500).send({ error: 'Failed to add comment.' });
     }
 });
@@ -187,22 +340,34 @@ app.get('/api/users/search', async (req, res) => {
     try {
         const { query } = req.query;
         if (!query || query.length < 2) return res.status(200).send([]);
-        const lowerCaseQuery = query.toLowerCase();
-        const usersRef = db.collection('users');
-        const nameQuery = usersRef.where('displayName_lowercase', '>=', lowerCaseQuery).where('displayName_lowercase', '<=', lowerCaseQuery + '\uf8ff').limit(10);
-        const usernameQuery = usersRef.where('username', '>=', lowerCaseQuery).where('username', '<=', lowerCaseQuery + '\uf8ff').limit(10);
-        const [nameSnapshot, usernameSnapshot] = await Promise.all([nameQuery.get(), usernameQuery.get()]);
-        const resultsMap = new Map();
-        nameSnapshot.forEach(doc => {
-            const { email, displayName_lowercase, ...userData } = doc.data();
-            resultsMap.set(doc.id, { id: doc.id, ...userData });
-        });
-        usernameSnapshot.forEach(doc => {
-            const { email, displayName_lowercase, ...userData } = doc.data();
-            resultsMap.set(doc.id, { id: doc.id, ...userData });
-        });
-        res.status(200).send(Array.from(resultsMap.values()));
+        
+        const searchQuery = `
+            SELECT 
+                user_id as id,
+                username,
+                display_name as "displayName",
+                profile_picture_url as "profilePictureUrl",
+                bio
+            FROM users 
+            WHERE 
+                LOWER(display_name) LIKE LOWER($1) OR 
+                LOWER(username) LIKE LOWER($1)
+            ORDER BY 
+                CASE 
+                    WHEN LOWER(username) = LOWER($2) THEN 1
+                    WHEN LOWER(display_name) = LOWER($2) THEN 2
+                    WHEN LOWER(username) LIKE LOWER($1) THEN 3
+                    ELSE 4
+                END
+            LIMIT 10
+        `;
+        
+        const searchPattern = `%${query}%`;
+        const result = await client.query(searchQuery, [searchPattern, query]);
+        
+        res.status(200).send(result.rows);
     } catch (error) {
+        console.error('Error searching users:', error);
         res.status(500).send({ error: 'Failed to search for users.' });
     }
 });
@@ -211,15 +376,30 @@ app.post('/api/users/:userId/follow', async (req, res) => {
     try {
         const { userId: userToFollowId } = req.params;
         const { currentUserId } = req.body;
-        if (!currentUserId || userToFollowId === currentUserId) return res.status(400).send({ error: 'Invalid request.' });
-        const currentUserRef = db.collection('users').doc(currentUserId);
-        const userToFollowRef = db.collection('users').doc(userToFollowId);
-        const batch = db.batch();
-        batch.update(currentUserRef, { following: admin.firestore.FieldValue.arrayUnion(userToFollowId) });
-        batch.update(userToFollowRef, { followers: admin.firestore.FieldValue.arrayUnion(currentUserId) });
-        await batch.commit();
+        if (!currentUserId || userToFollowId === currentUserId) {
+            return res.status(400).send({ error: 'Invalid request.' });
+        }
+        
+        // Check if users exist
+        const checkUsersQuery = `
+            SELECT user_id FROM users WHERE user_id IN ($1, $2)
+        `;
+        const usersResult = await client.query(checkUsersQuery, [currentUserId, userToFollowId]);
+        if (usersResult.rows.length < 2) {
+            return res.status(404).send({ error: 'One or both users not found.' });
+        }
+        
+        // Insert connection (ignore if already exists)
+        const insertConnectionQuery = `
+            INSERT INTO user_connections (follower_id, following_id, created_at) 
+            VALUES ($1, $2, NOW())
+            ON CONFLICT (follower_id, following_id) DO NOTHING
+        `;
+        await client.query(insertConnectionQuery, [currentUserId, userToFollowId]);
+        
         res.status(200).send({ message: 'Successfully followed user.' });
     } catch (error) {
+        console.error('Error following user:', error);
         res.status(500).send({ error: 'Failed to follow user.' });
     }
 });
@@ -229,14 +409,17 @@ app.post('/api/users/:userId/unfollow', async (req, res) => {
         const { userId: userToUnfollowId } = req.params;
         const { currentUserId } = req.body;
         if (!currentUserId) return res.status(400).send({ error: 'Current user ID is required.' });
-        const currentUserRef = db.collection('users').doc(currentUserId);
-        const userToUnfollowRef = db.collection('users').doc(userToUnfollowId);
-        const batch = db.batch();
-        batch.update(currentUserRef, { following: admin.firestore.FieldValue.arrayRemove(userToUnfollowId) });
-        batch.update(userToUnfollowRef, { followers: admin.firestore.FieldValue.arrayRemove(currentUserId) });
-        await batch.commit();
+        
+        // Remove connection
+        const deleteConnectionQuery = `
+            DELETE FROM user_connections 
+            WHERE follower_id = $1 AND following_id = $2
+        `;
+        await client.query(deleteConnectionQuery, [currentUserId, userToUnfollowId]);
+        
         res.status(200).send({ message: 'Successfully unfollowed user.' });
     } catch (error) {
+        console.error('Error unfollowing user:', error);
         res.status(500).send({ error: 'Failed to unfollow user.' });
     }
 });
@@ -245,15 +428,28 @@ app.post('/api/users/:userId/request-connect', async (req, res) => {
     try {
         const { userId: recipientId } = req.params;
         const { currentUserId: senderId } = req.body;
-        if (!senderId || recipientId === senderId) return res.status(400).send({ error: 'Invalid request.' });
-        const senderRef = db.collection('users').doc(senderId);
-        const recipientRef = db.collection('users').doc(recipientId);
-        const batch = db.batch();
-        batch.update(senderRef, { connectionRequestsSent: admin.firestore.FieldValue.arrayUnion(recipientId) });
-        batch.update(recipientRef, { connectionRequestsReceived: admin.firestore.FieldValue.arrayUnion(senderId) });
-        await batch.commit();
+        if (!senderId || recipientId === senderId) {
+            return res.status(400).send({ error: 'Invalid request.' });
+        }
+        
+        // Check if users exist
+        const checkUsersQuery = `SELECT user_id FROM users WHERE user_id IN ($1, $2)`;
+        const usersResult = await client.query(checkUsersQuery, [senderId, recipientId]);
+        if (usersResult.rows.length < 2) {
+            return res.status(404).send({ error: 'One or both users not found.' });
+        }
+        
+        // Insert connection request (ignore if already exists)
+        const insertRequestQuery = `
+            INSERT INTO connection_requests (sender_id, recipient_id, created_at) 
+            VALUES ($1, $2, NOW())
+            ON CONFLICT (sender_id, recipient_id) DO NOTHING
+        `;
+        await client.query(insertRequestQuery, [senderId, recipientId]);
+        
         res.status(200).send({ message: 'Connection request sent.' });
     } catch (error) {
+        console.error('Error sending connection request:', error);
         res.status(500).send({ error: 'Failed to send connection request.' });
     }
 });
@@ -262,17 +458,47 @@ app.post('/api/users/:userId/accept-connect', async (req, res) => {
     try {
         const { userId: senderId } = req.params;
         const { currentUserId: recipientId } = req.body;
-        if (!recipientId || senderId === recipientId) return res.status(400).send({ error: 'Invalid request.' });
-        const recipientRef = db.collection('users').doc(recipientId);
-        const senderRef = db.collection('users').doc(senderId);
-        const batch = db.batch();
-        batch.update(recipientRef, { connectionRequestsReceived: admin.firestore.FieldValue.arrayRemove(senderId) });
-        batch.update(senderRef, { connectionRequestsSent: admin.firestore.FieldValue.arrayRemove(recipientId) });
-        batch.update(recipientRef, { following: admin.firestore.FieldValue.arrayUnion(senderId), followers: admin.firestore.FieldValue.arrayUnion(senderId) });
-        batch.update(senderRef, { followers: admin.firestore.FieldValue.arrayUnion(recipientId), following: admin.firestore.FieldValue.arrayUnion(recipientId) });
-        await batch.commit();
-        res.status(200).send({ message: 'Connection accepted.' });
+        if (!recipientId || senderId === recipientId) {
+            return res.status(400).send({ error: 'Invalid request.' });
+        }
+        
+        // Check if connection request exists
+        const checkRequestQuery = `
+            SELECT request_id FROM connection_requests 
+            WHERE sender_id = $1 AND recipient_id = $2
+        `;
+        const requestResult = await client.query(checkRequestQuery, [senderId, recipientId]);
+        if (requestResult.rows.length === 0) {
+            return res.status(404).send({ error: 'Connection request not found.' });
+        }
+        
+        // Begin transaction
+        await client.query('BEGIN');
+        
+        try {
+            // Remove connection request
+            const deleteRequestQuery = `
+                DELETE FROM connection_requests 
+                WHERE sender_id = $1 AND recipient_id = $2
+            `;
+            await client.query(deleteRequestQuery, [senderId, recipientId]);
+            
+            // Add mutual connections
+            const insertConnectionQuery = `
+                INSERT INTO user_connections (follower_id, following_id, created_at) 
+                VALUES ($1, $2, NOW()), ($2, $1, NOW())
+                ON CONFLICT (follower_id, following_id) DO NOTHING
+            `;
+            await client.query(insertConnectionQuery, [recipientId, senderId]);
+            
+            await client.query('COMMIT');
+            res.status(200).send({ message: 'Connection accepted.' });
+        } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        }
     } catch (error) {
+        console.error('Error accepting connection:', error);
         res.status(500).send({ error: 'Failed to accept connection.' });
     }
 });
@@ -281,14 +507,18 @@ app.post('/api/users/:userId/cancel-request', async (req, res) => {
     try {
         const { userId: recipientId } = req.params;
         const { currentUserId: senderId } = req.body;
-        const senderRef = db.collection('users').doc(senderId);
-        const recipientRef = db.collection('users').doc(recipientId);
-        const batch = db.batch();
-        batch.update(senderRef, { connectionRequestsSent: admin.firestore.FieldValue.arrayRemove(recipientId) });
-        batch.update(recipientRef, { connectionRequestsReceived: admin.firestore.FieldValue.arrayRemove(senderId) });
-        await batch.commit();
+        if (!senderId) return res.status(400).send({ error: 'Current user ID is required.' });
+        
+        // Remove connection request
+        const deleteRequestQuery = `
+            DELETE FROM connection_requests 
+            WHERE sender_id = $1 AND recipient_id = $2
+        `;
+        await client.query(deleteRequestQuery, [senderId, recipientId]);
+        
         res.status(200).send({ message: 'Request cancelled.' });
     } catch (error) {
+        console.error('Error cancelling request:', error);
         res.status(500).send({ error: 'Failed to cancel request.' });
     }
 });
@@ -296,21 +526,216 @@ app.post('/api/users/:userId/cancel-request', async (req, res) => {
 app.post('/api/users/notifications', async (req, res) => {
     try {
         const { userIds } = req.body;
-        if (!userIds || !Array.isArray(userIds) || userIds.length === 0) return res.status(200).send([]);
-        const usersRef = db.collection('users');
-        const snapshot = await usersRef.where(admin.firestore.FieldPath.documentId(), 'in', userIds).get();
-        const users = snapshot.docs.map(doc => {
-            const { email, displayName_lowercase, ...userData } = doc.data();
-            return { id: doc.id, ...userData };
-        });
-        res.status(200).send(users);
+        if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
+            return res.status(200).send([]);
+        }
+        
+        // Create placeholders for the IN clause
+        const placeholders = userIds.map((_, index) => `$${index + 1}`).join(',');
+        
+        const getUsersQuery = `
+            SELECT 
+                user_id as id,
+                username,
+                display_name as "displayName",
+                profile_picture_url as "profilePictureUrl",
+                bio
+            FROM users 
+            WHERE user_id IN (${placeholders})
+        `;
+        
+        const result = await client.query(getUsersQuery, userIds);
+        res.status(200).send(result.rows);
     } catch (error) {
+        console.error('Error fetching notification data:', error);
         res.status(500).send({ error: 'Failed to fetch notification data.' });
+    }
+});
+
+// USER PROFILE ROUTES
+app.get('/api/users/:userId', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        
+        const getUserQuery = `
+            SELECT 
+                user_id as id,
+                username,
+                display_name as "displayName",
+                profile_picture_url as "profilePictureUrl",
+                bio,
+                created_at as "createdAt"
+            FROM users 
+            WHERE user_id = $1
+        `;
+        
+        const result = await client.query(getUserQuery, [userId]);
+        if (result.rows.length === 0) {
+            return res.status(404).send({ error: 'User not found.' });
+        }
+        
+        res.status(200).send(result.rows[0]);
+    } catch (error) {
+        console.error('Error fetching user:', error);
+        res.status(500).send({ error: 'Failed to fetch user.' });
+    }
+});
+
+app.put('/api/users/:userId', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { username, displayName, bio, profilePictureUrl } = req.body;
+        
+        const updateUserQuery = `
+            UPDATE users 
+            SET 
+                username = COALESCE($2, username),
+                display_name = COALESCE($3, display_name),
+                bio = COALESCE($4, bio),
+                profile_picture_url = COALESCE($5, profile_picture_url),
+                updated_at = NOW()
+            WHERE user_id = $1
+            RETURNING user_id as id, username, display_name as "displayName", bio, profile_picture_url as "profilePictureUrl"
+        `;
+        
+        const result = await client.query(updateUserQuery, [userId, username, displayName, bio, profilePictureUrl]);
+        if (result.rows.length === 0) {
+            return res.status(404).send({ error: 'User not found.' });
+        }
+        
+        res.status(200).send(result.rows[0]);
+    } catch (error) {
+        console.error('Error updating user:', error);
+        if (error.code === '23505') {
+            res.status(400).send({ error: 'Username already exists.' });
+        } else {
+            res.status(500).send({ error: 'Failed to update user.' });
+        }
+    }
+});
+
+// Create user endpoint for when users sign up
+app.post('/api/users', async (req, res) => {
+    try {
+        const { userId, username, email, displayName, profilePictureUrl, bio } = req.body;
+        if (!userId || !username || !email || !displayName) {
+            return res.status(400).send({ error: 'userId, username, email, and displayName are required.' });
+        }
+        
+        const insertUserQuery = `
+            INSERT INTO users (user_id, username, email, display_name, profile_picture_url, bio, created_at, updated_at) 
+            VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+            ON CONFLICT (user_id) DO UPDATE SET
+                username = EXCLUDED.username,
+                email = EXCLUDED.email,
+                display_name = EXCLUDED.display_name,
+                profile_picture_url = EXCLUDED.profile_picture_url,
+                bio = EXCLUDED.bio,
+                updated_at = NOW()
+            RETURNING user_id as id, username, display_name as "displayName", profile_picture_url as "profilePictureUrl", bio
+        `;
+        
+        const result = await client.query(insertUserQuery, [userId, username, email, displayName, profilePictureUrl, bio]);
+        res.status(201).send(result.rows[0]);
+    } catch (error) {
+        console.error('Error creating user:', error);
+        if (error.code === '23505') {
+            res.status(400).send({ error: 'Username or email already exists.' });
+        } else {
+            res.status(500).send({ error: 'Failed to create user.' });
+        }
+    }
+});
+
+// Get user's connections/followers/following
+app.get('/api/users/:userId/connections', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { type } = req.query; // 'followers', 'following', or 'requests'
+        
+        let query;
+        let params = [userId];
+        
+        if (type === 'followers') {
+            query = `
+                SELECT 
+                    u.user_id as id,
+                    u.username,
+                    u.display_name as "displayName",
+                    u.profile_picture_url as "profilePictureUrl",
+                    u.bio
+                FROM user_connections uc
+                JOIN users u ON uc.follower_id = u.user_id
+                WHERE uc.following_id = $1
+                ORDER BY uc.created_at DESC
+            `;
+        } else if (type === 'following') {
+            query = `
+                SELECT 
+                    u.user_id as id,
+                    u.username,
+                    u.display_name as "displayName",
+                    u.profile_picture_url as "profilePictureUrl",
+                    u.bio
+                FROM user_connections uc
+                JOIN users u ON uc.following_id = u.user_id
+                WHERE uc.follower_id = $1
+                ORDER BY uc.created_at DESC
+            `;
+        } else if (type === 'requests') {
+            query = `
+                SELECT 
+                    u.user_id as id,
+                    u.username,
+                    u.display_name as "displayName",
+                    u.profile_picture_url as "profilePictureUrl",
+                    u.bio
+                FROM connection_requests cr
+                JOIN users u ON cr.sender_id = u.user_id
+                WHERE cr.recipient_id = $1
+                ORDER BY cr.created_at DESC
+            `;
+        } else {
+            return res.status(400).send({ error: 'Invalid type parameter. Use followers, following, or requests.' });
+        }
+        
+        const result = await client.query(query, params);
+        res.status(200).send(result.rows);
+    } catch (error) {
+        console.error('Error fetching connections:', error);
+        res.status(500).send({ error: 'Failed to fetch connections.' });
+    }
+});
+
+// PLACEHOLDER CHAT/MESSAGING ENDPOINTS (to be implemented later)
+app.get('/api/users/:userId/chats', async (req, res) => {
+    try {
+        // For now, return empty array - implement proper chat functionality later
+        res.status(200).send([]);
+    } catch (error) {
+        console.error('Error fetching chats:', error);
+        res.status(500).send({ error: 'Failed to fetch chats.' });
+    }
+});
+
+app.get('/api/chats/:chatId/messages', async (req, res) => {
+    try {
+        // For now, return empty array - implement proper messaging functionality later
+        res.status(200).send([]);
+    } catch (error) {
+        console.error('Error fetching messages:', error);
+        res.status(500).send({ error: 'Failed to fetch messages.' });
     }
 });
 
 
 // 3. Start Server
 app.listen(PORT, () => {
-  console.log(`Server is running on http://localhost:${PORT}`);
+  console.log(`🚀 EduLink Backend Server Started!`);
+  console.log(`📍 Environment: ${isDevelopment ? 'Development' : isAzure ? 'Azure Cloud' : 'Production'}`);
+  console.log(`🌐 Server running on: ${isDevelopment ? `http://localhost:${PORT}` : `Port ${PORT}`}`);
+  console.log(`💾 Database: PostgreSQL ${isDevelopment ? '(Local/Neon)' : '(Neon Cloud)'}`);
+  console.log(`☁️ Storage: ${sharedKeyCredential ? 'Azure Blob Storage' : 'Not configured (Dev mode)'}`);
+  console.log(`🔐 Auth: Firebase Admin SDK`);
+  console.log('✅ Ready to accept requests!');
 });

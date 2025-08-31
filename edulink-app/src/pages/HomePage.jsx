@@ -3,6 +3,7 @@ import CreatePost from '../components/CreatePost';
 import Post from '../components/Post';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../App';
+import { apiCall } from '../config/api';
 
 // New component to show connection requests
 function ConnectionRequests({ requests, navigateToProfile }) {
@@ -44,7 +45,7 @@ export default function HomePage({ userData, onSignOut, navigateToProfile, navig
     const fetchPosts = async () => {
         if (posts.length === 0) setLoading(true); 
         try {
-            const response = await fetch('https://edulink-g0gqgxhhezfjbzg4.southindia-01.azurewebsites.net/api/posts');
+            const response = await apiCall('/api/posts');
             if (!response.ok) throw new Error('Failed to fetch posts from server.');
             const data = await response.json();
             setPosts(data);
