@@ -2,7 +2,7 @@
 const express = require('express');
 const cors = require('cors');
 require('dotenv').config(); 
-const { Client } = require('pg');
+const { Client, Pool } = require('pg');
 const { BlobServiceClient, StorageSharedKeyCredential, BlobSASPermissions, generateBlobSASQueryParameters } = require('@azure/storage-blob');
 const admin = require('firebase-admin');
 
@@ -11,36 +11,34 @@ const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
 
 admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
 
-// --- PostgreSQL Database Setup ---
-const client = new Client({
+// --- PostgreSQL Database Setup with Pool ---
+const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: {
     rejectUnauthorized: false
-  }
+  },
+  max: 20, // maximum number of clients in the pool
+  idleTimeoutMillis: 30000, // close idle clients after 30 seconds
+  connectionTimeoutMillis: 2000, // return an error after 2 seconds if connection could not be established
 });
 
-// Connect to PostgreSQL with error handling
-const connectToDatabase = async () => {
-  try {
-    await client.connect();
-    console.log('Connected to Neon PostgreSQL database');
-    
-    // Handle connection errors
-    client.on('error', (err) => {
-      console.error('Database connection error:', err);
-      if (err.code === 'ECONNRESET' || err.code === 'ENOTFOUND') {
-        console.log('Attempting to reconnect to database...');
-        setTimeout(connectToDatabase, 5000);
-      }
-    });
-    
-  } catch (err) {
-    console.error('Error connecting to PostgreSQL:', err);
-    setTimeout(connectToDatabase, 5000);
-  }
-};
+// Legacy client for backward compatibility (we'll migrate queries to pool)
+const client = pool;
 
-connectToDatabase();
+// Test database connection
+pool.connect()
+  .then((client) => {
+    console.log('Connected to Neon PostgreSQL database');
+    client.release();
+  })
+  .catch(err => {
+    console.error('Error connecting to PostgreSQL:', err);
+  });
+
+// Handle pool errors
+pool.on('error', (err) => {
+  console.error('Unexpected error on idle client', err);
+});
 
 
 // --- Express Setup ---
