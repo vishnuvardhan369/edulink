@@ -2,6 +2,7 @@ import React from 'react';
 import CreatePost from '../components/CreatePost';
 import Post from '../components/Post';
 import { apiCall } from '../config/api';
+import { auth } from '../App';
 
 // New component to show connection requests
 function ConnectionRequests({ requests, navigateToProfile }) {
@@ -100,7 +101,7 @@ export default function HomePage({ userData, onSignOut, navigateToProfile, navig
                         }
                     </button>
                     <button onClick={navigateToSearch} style={{ marginRight: '10px' }}>Search</button>
-                    <button onClick={() => navigateToProfile(userData.uid)} style={{ marginRight: '10px' }}>My Profile</button>
+                    <button onClick={() => navigateToProfile(auth.currentUser.uid)} style={{ marginRight: '10px' }}>My Profile</button>
                     <button onClick={onSignOut}>Sign Out</button>
                 </div>
             </div>
