@@ -159,8 +159,8 @@ app.post('/api/posts', async (req, res) => {
         
         // Insert post into PostgreSQL
         const insertPostQuery = `
-            INSERT INTO posts (user_id, description, created_at) 
-            VALUES ($1, $2, NOW()) 
+            INSERT INTO posts (user_id, description) 
+            VALUES ($1, $2) 
             RETURNING post_id, created_at
         `;
         const postResult = await client.query(insertPostQuery, [userId, description]);
@@ -295,7 +295,7 @@ app.post('/api/posts/:postId/like', async (req, res) => {
             await client.query(deleteLikeQuery, [postId, userId]);
         } else {
             // Like the post
-            const insertLikeQuery = `INSERT INTO likes (post_id, user_id, created_at) VALUES ($1, $2, NOW())`;
+            const insertLikeQuery = `INSERT INTO likes (post_id, user_id) VALUES ($1, $2)`;
             await client.query(insertLikeQuery, [postId, userId]);
         }
         
@@ -321,8 +321,8 @@ app.post('/api/posts/:postId/comment', async (req, res) => {
         
         // Add comment
         const insertCommentQuery = `
-            INSERT INTO comments (post_id, user_id, comment_text, created_at) 
-            VALUES ($1, $2, $3, NOW())
+            INSERT INTO comments (post_id, user_id, comment_text) 
+            VALUES ($1, $2, $3)
         `;
         await client.query(insertCommentQuery, [postId, userId, text]);
         
