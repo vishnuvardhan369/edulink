@@ -163,7 +163,7 @@ app.get('/api/posts', async (req, res) => {
                 u.profile_picture_url as "profilePictureUrl",
                 COALESCE(
                     json_agg(
-                        DISTINCT pi.image_url ORDER BY pi.created_at
+                        DISTINCT pi.image_url
                     ) FILTER (WHERE pi.image_url IS NOT NULL), 
                     '[]'::json
                 ) as "imageUrls",
@@ -178,10 +178,6 @@ app.get('/api/posts', async (req, res) => {
                 COALESCE(
                     json_agg(
                         DISTINCT jsonb_build_object(
-                            'userId', c.user_id,
-                            'text', c.comment_text,
-                            'createdAt', EXTRACT(EPOCH FROM c.created_at) * 1000
-                        ) ORDER BY jsonb_build_object(
                             'userId', c.user_id,
                             'text', c.comment_text,
                             'createdAt', EXTRACT(EPOCH FROM c.created_at) * 1000
@@ -307,7 +303,7 @@ app.post('/api/posts/:postId/comment', async (req, res) => {
                 u.profile_picture_url as "profilePictureUrl",
                 COALESCE(
                     json_agg(
-                        DISTINCT pi.image_url ORDER BY pi.created_at
+                        DISTINCT pi.image_url
                     ) FILTER (WHERE pi.image_url IS NOT NULL), 
                     '[]'::json
                 ) as "imageUrls",
@@ -322,10 +318,6 @@ app.post('/api/posts/:postId/comment', async (req, res) => {
                 COALESCE(
                     json_agg(
                         DISTINCT jsonb_build_object(
-                            'userId', c.user_id,
-                            'text', c.comment_text,
-                            'createdAt', EXTRACT(EPOCH FROM c.created_at) * 1000
-                        ) ORDER BY jsonb_build_object(
                             'userId', c.user_id,
                             'text', c.comment_text,
                             'createdAt', EXTRACT(EPOCH FROM c.created_at) * 1000
