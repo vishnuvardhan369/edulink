@@ -136,7 +136,11 @@ export default function ProfilePage({ viewingProfileId, currentUserData, navigat
                 username: editFormData.username,
                 displayName: editFormData.displayName,
                 bio: editFormData.bio,
-                profilePictureUrl: editFormData.profilePictureUrl
+                profilePictureUrl: editFormData.profilePictureUrl,
+                headline: editFormData.headline,
+                location: editFormData.location,
+                skills: editFormData.skills,
+                socialLinks: editFormData.socialLinks
             };
             const saveResponse = await apiCall(`/api/users/${auth.currentUser.uid}`, {
                 method: 'PUT',
@@ -224,7 +228,72 @@ export default function ProfilePage({ viewingProfileId, currentUserData, navigat
                 {renderConnectionButtons()}
             </div>
             {viewedUserData.bio && <p>{viewedUserData.bio}</p>}
-            {/* Display Skills and Social Links */}
+            
+            {/* Display Location */}
+            {viewedUserData.location && (
+                <div style={{marginTop: '15px'}}>
+                    <strong>📍 Location:</strong> {viewedUserData.location}
+                </div>
+            )}
+            
+            {/* Display Skills */}
+            {viewedUserData.skills && viewedUserData.skills.length > 0 && (
+                <div style={{marginTop: '15px'}}>
+                    <strong>🛠️ Skills:</strong>
+                    <div style={{marginTop: '5px'}}>
+                        {viewedUserData.skills.map((skill, index) => (
+                            <span key={index} style={{
+                                display: 'inline-block',
+                                backgroundColor: '#e3f2fd',
+                                color: '#1976d2',
+                                padding: '4px 8px',
+                                margin: '2px',
+                                borderRadius: '4px',
+                                fontSize: '14px'
+                            }}>
+                                {skill}
+                            </span>
+                        ))}
+                    </div>
+                </div>
+            )}
+            
+            {/* Display Social Links */}
+            {viewedUserData.socialLinks && (viewedUserData.socialLinks.linkedin || viewedUserData.socialLinks.github) && (
+                <div style={{marginTop: '15px'}}>
+                    <strong>🌐 Social Links:</strong>
+                    <div style={{marginTop: '5px'}}>
+                        {viewedUserData.socialLinks.linkedin && (
+                            <a href={viewedUserData.socialLinks.linkedin} target="_blank" rel="noopener noreferrer" style={{
+                                display: 'inline-block',
+                                margin: '5px 10px 5px 0',
+                                padding: '8px 12px',
+                                backgroundColor: '#0077b5',
+                                color: 'white',
+                                textDecoration: 'none',
+                                borderRadius: '4px',
+                                fontSize: '14px'
+                            }}>
+                                LinkedIn
+                            </a>
+                        )}
+                        {viewedUserData.socialLinks.github && (
+                            <a href={viewedUserData.socialLinks.github} target="_blank" rel="noopener noreferrer" style={{
+                                display: 'inline-block',
+                                margin: '5px 10px 5px 0',
+                                padding: '8px 12px',
+                                backgroundColor: '#333',
+                                color: 'white',
+                                textDecoration: 'none',
+                                borderRadius: '4px',
+                                fontSize: '14px'
+                            }}>
+                                GitHub
+                            </a>
+                        )}
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
