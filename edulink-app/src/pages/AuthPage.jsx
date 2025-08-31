@@ -8,6 +8,7 @@ import {
     sendPasswordResetEmail
 } from 'firebase/auth';
 import { auth } from '../App'; // Import auth from our main App.jsx
+import './AuthPage.css';
 
 function getFriendlyErrorMessage(errorCode) {
     switch (errorCode) {
@@ -31,19 +32,21 @@ export default function AuthPage() {
         catch (error) { alert(getFriendlyErrorMessage(error.code)); }
     };
     return (
-        <div>
-            <h1>Welcome to EduLink</h1>
-            {isLogin ? <LoginForm /> : <SignUpForm />}
-            <button onClick={() => setIsLogin(!isLogin)}>
-                {isLogin ? "Need an account? Sign Up" : "Already have an account? Login"}
-            </button>
-            <hr />
-            <button onClick={handleGoogleSignIn}>Sign in with Google</button>
+        <div className="auth-container">
+            <div className="auth-card">
+                <h1 className="auth-title">Welcome to EduLink</h1>
+                {isLogin ? <LoginForm /> : <SignUpForm />}
+                <button className="toggle-auth-mode" onClick={() => setIsLogin(!isLogin)}>
+                    {isLogin ? "Need an account? Sign Up" : "Already have an account? Login"}
+                </button>
+                <hr className="divider" />
+                <button className="google-signin" onClick={handleGoogleSignIn}>Sign in with Google</button>
+            </div>
         </div>
     );
 };
 
-// Internal components for this page
+// Update styles for LoginForm, SignUpForm, and ForgotPasswordForm to match the new design
 const LoginForm = () => {
     const [email, setEmail] = React.useState('');
     const [password, setPassword] = React.useState('');
@@ -60,15 +63,15 @@ const LoginForm = () => {
     
     if (showForgotPassword) return <ForgotPasswordForm onBack={() => setShowForgotPassword(false)} />;
     return (
-        <form onSubmit={handleLogin}>
-            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" required /><br />
-            <div>
-                <input type={showPassword ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" required />
-                <button type="button" onClick={() => setShowPassword(!showPassword)}>Show</button>
+        <form className="auth-form" onSubmit={handleLogin}>
+            <input className="auth-input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" required /><br />
+            <div className="password-container">
+                <input className="auth-input" type={showPassword ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" required />
+                <button className="show-password" type="button" onClick={() => setShowPassword(!showPassword)}>Show</button>
             </div>
-            {error && <p style={{color: 'red'}}>{error}</p>}
-            <button type="submit" disabled={loading}>{loading ? 'Logging in...' : 'Login'}</button><br />
-            <button type="button" onClick={() => setShowForgotPassword(true)}>Forgot Password?</button>
+            {error && <p className="error-message">{error}</p>}
+            <button className="auth-button" type="submit" disabled={loading}>{loading ? 'Logging in...' : 'Login'}</button><br />
+            <button className="forgot-password" type="button" onClick={() => setShowForgotPassword(true)}>Forgot Password?</button>
         </form>
     );
 };
@@ -93,14 +96,14 @@ const SignUpForm = () => {
     };
 
     return (
-        <form onSubmit={handleSignUp}>
-            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" required /><br />
-            <input type={showPassword ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" required /><br />
-            <input type={showPassword ? "text" : "password"} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Confirm Password" required /><br />
-            <button type="button" onClick={() => setShowPassword(!showPassword)}>Show</button>
-            <p style={{fontSize: '12px'}}>Password must be 8+ characters and include a number.</p>
-            {error && <p style={{color: 'red'}}>{error}</p>}
-            <button type="submit" disabled={loading}>{loading ? 'Signing Up...' : 'Sign Up'}</button>
+        <form className="auth-form" onSubmit={handleSignUp}>
+            <input className="auth-input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" required /><br />
+            <input className="auth-input" type={showPassword ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" required /><br />
+            <input className="auth-input" type={showPassword ? "text" : "password"} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Confirm Password" required /><br />
+            <button className="show-password" type="button" onClick={() => setShowPassword(!showPassword)}>Show</button>
+            <p className="password-hint">Password must be 8+ characters and include a number.</p>
+            {error && <p className="error-message">{error}</p>}
+            <button className="auth-button" type="submit" disabled={loading}>{loading ? 'Signing Up...' : 'Sign Up'}</button>
         </form>
     );
 };
@@ -121,15 +124,15 @@ const ForgotPasswordForm = ({ onBack }) => {
     };
 
     return (
-        <div>
-            <h3>Reset Password</h3>
-            <form onSubmit={handleReset}>
-                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Enter your email" required /><br/>
-                {message && <p style={{color: 'green'}}>{message}</p>}
-                {error && <p style={{color: 'red'}}>{error}</p>}
-                <button type="submit" disabled={loading}>{loading ? 'Sending...' : 'Send Reset Link'}</button>
+        <div className="forgot-password-container">
+            <h3 className="forgot-password-title">Reset Password</h3>
+            <form className="auth-form" onSubmit={handleReset}>
+                <input className="auth-input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Enter your email" required /><br/>
+                {message && <p className="success-message">{message}</p>}
+                {error && <p className="error-message">{error}</p>}
+                <button className="auth-button" type="submit" disabled={loading}>{loading ? 'Sending...' : 'Send Reset Link'}</button>
             </form>
-            <button onClick={onBack}>&larr; Back to Login</button>
+            <button className="back-button" onClick={onBack}>&larr; Back to Login</button>
         </div>
     );
 };

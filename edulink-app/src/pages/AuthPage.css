@@ -1,0 +1,138 @@
+.auth-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    background: linear-gradient(135deg, #6a11cb, #2575fc);
+}
+
+.auth-card {
+    background: #fff;
+    padding: 2rem;
+    border-radius: 10px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    text-align: center;
+    width: 100%;
+    max-width: 400px;
+}
+
+.auth-title {
+    font-size: 1.8rem;
+    color: #333;
+    margin-bottom: 1rem;
+}
+
+.auth-form {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.auth-input {
+    padding: 0.8rem;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    font-size: 1rem;
+    width: 100%;
+}
+
+.auth-button {
+    padding: 0.8rem;
+    background: #2575fc;
+    color: #fff;
+    border: none;
+    border-radius: 5px;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: background 0.3s;
+}
+
+.auth-button:hover {
+    background: #1a5bb8;
+}
+
+.toggle-auth-mode {
+    background: none;
+    border: none;
+    color: #2575fc;
+    cursor: pointer;
+    font-size: 0.9rem;
+    margin-top: 1rem;
+}
+
+.google-signin {
+    padding: 0.8rem;
+    background: #db4437;
+    color: #fff;
+    border: none;
+    border-radius: 5px;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: background 0.3s;
+}
+
+.google-signin:hover {
+    background: #a33328;
+}
+
+.divider {
+    margin: 1.5rem 0;
+    border: none;
+    border-top: 1px solid #ccc;
+}
+
+.password-container {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.show-password {
+    background: none;
+    border: none;
+    color: #2575fc;
+    cursor: pointer;
+    font-size: 0.9rem;
+}
+
+.error-message {
+    color: red;
+    font-size: 0.9rem;
+}
+
+.success-message {
+    color: green;
+    font-size: 0.9rem;
+}
+
+.password-hint {
+    font-size: 0.8rem;
+    color: #666;
+}
+
+.forgot-password {
+    background: none;
+    border: none;
+    color: #2575fc;
+    cursor: pointer;
+    font-size: 0.9rem;
+}
+
+.forgot-password-container {
+    text-align: center;
+}
+
+.forgot-password-title {
+    font-size: 1.5rem;
+    color: #333;
+    margin-bottom: 1rem;
+}
+
+.back-button {
+    background: none;
+    border: none;
+    color: #2575fc;
+    cursor: pointer;
+    font-size: 0.9rem;
+    margin-top: 1rem;
+}
