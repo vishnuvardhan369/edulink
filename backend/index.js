@@ -397,12 +397,12 @@ app.get('/api/users/search', async (req, res) => {
                 bio
             FROM users 
             WHERE 
-                LOWER(display_name) LIKE LOWER($1) OR 
+                display_name_lowercase LIKE LOWER($1) OR 
                 LOWER(username) LIKE LOWER($1)
             ORDER BY 
                 CASE 
                     WHEN LOWER(username) = LOWER($2) THEN 1
-                    WHEN LOWER(display_name) = LOWER($2) THEN 2
+                    WHEN display_name_lowercase = LOWER($2) THEN 2
                     WHEN LOWER(username) LIKE LOWER($1) THEN 3
                     ELSE 4
                 END
@@ -438,8 +438,8 @@ app.post('/api/users/:userId/follow', async (req, res) => {
         
         // Insert connection (ignore if already exists)
         const insertConnectionQuery = `
-            INSERT INTO user_connections (follower_id, following_id) 
-            VALUES ($1, $2)
+            INSERT INTO user_connections (follower_id, following_id, created_at) 
+            VALUES ($1, $2, NOW())
             ON CONFLICT (follower_id, following_id) DO NOTHING
         `;
         await client.query(insertConnectionQuery, [currentUserId, userToFollowId]);
@@ -488,8 +488,8 @@ app.post('/api/users/:userId/request-connect', async (req, res) => {
         
         // Insert connection request (ignore if already exists)
         const insertRequestQuery = `
-            INSERT INTO connection_requests (sender_id, recipient_id) 
-            VALUES ($1, $2)
+            INSERT INTO connection_requests (sender_id, recipient_id, created_at) 
+            VALUES ($1, $2, NOW())
             ON CONFLICT (sender_id, recipient_id) DO NOTHING
         `;
         await client.query(insertRequestQuery, [senderId, recipientId]);
@@ -532,8 +532,8 @@ app.post('/api/users/:userId/accept-connect', async (req, res) => {
             
             // Add mutual connections
             const insertConnectionQuery = `
-                INSERT INTO user_connections (follower_id, following_id) 
-                VALUES ($1, $2), ($2, $1)
+                INSERT INTO user_connections (follower_id, following_id, created_at) 
+                VALUES ($1, $2, NOW()), ($2, $1, NOW())
                 ON CONFLICT (follower_id, following_id) DO NOTHING
             `;
             await client.query(insertConnectionQuery, [recipientId, senderId]);
