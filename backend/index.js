@@ -621,7 +621,37 @@ app.get('/api/users/:userId', async (req, res) => {
             return res.status(404).send({ error: 'User not found.' });
         }
         
-        res.status(200).send(result.rows[0]);
+        const user = result.rows[0];
+        
+        // Get followers (users who follow this user)
+        const followersQuery = `
+            SELECT follower_id FROM user_connections WHERE following_id = $1
+        `;
+        const followersResult = await client.query(followersQuery, [userId]);
+        user.followers = followersResult.rows.map(row => row.follower_id);
+        
+        // Get following (users this user follows)
+        const followingQuery = `
+            SELECT following_id FROM user_connections WHERE follower_id = $1
+        `;
+        const followingResult = await client.query(followingQuery, [userId]);
+        user.following = followingResult.rows.map(row => row.following_id);
+        
+        // Get connection requests sent by this user
+        const requestsSentQuery = `
+            SELECT recipient_id FROM connection_requests WHERE sender_id = $1
+        `;
+        const requestsSentResult = await client.query(requestsSentQuery, [userId]);
+        user.connectionRequestsSent = requestsSentResult.rows.map(row => row.recipient_id);
+        
+        // Get connection requests received by this user
+        const requestsReceivedQuery = `
+            SELECT sender_id FROM connection_requests WHERE recipient_id = $1
+        `;
+        const requestsReceivedResult = await client.query(requestsReceivedQuery, [userId]);
+        user.connectionRequestsReceived = requestsReceivedResult.rows.map(row => row.sender_id);
+        
+        res.status(200).send(user);
     } catch (error) {
         console.error('Error fetching user:', error);
         res.status(500).send({ error: 'Failed to fetch user.' });
