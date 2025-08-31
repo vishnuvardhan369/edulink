@@ -504,15 +504,23 @@ app.post('/api/users/:userId/request-connect', async (req, res) => {
     try {
         const { userId: recipientId } = req.params;
         const { currentUserId: senderId } = req.body;
+        
+        console.log('Connection request:', { senderId, recipientId });
+        
         if (!senderId || recipientId === senderId) {
-            return res.status(400).send({ error: 'Invalid request.' });
+            console.log('Invalid request: same user or missing sender');
+            return res.status(400).json({ error: 'Invalid request.' });
         }
         
         // Check if users exist
-        const checkUsersQuery = `SELECT user_id FROM users WHERE user_id IN ($1, $2)`;
+        const checkUsersQuery = `SELECT user_id, display_name FROM users WHERE user_id IN ($1, $2)`;
         const usersResult = await client.query(checkUsersQuery, [senderId, recipientId]);
+        
+        console.log('Users found:', usersResult.rows.length);
+        
         if (usersResult.rows.length < 2) {
-            return res.status(404).send({ error: 'One or both users not found.' });
+            console.log('One or both users not found');
+            return res.status(404).json({ error: 'One or both users not found.' });
         }
         
         // Check if connection request already exists
@@ -521,48 +529,79 @@ app.post('/api/users/:userId/request-connect', async (req, res) => {
             WHERE sender_id = $1 AND recipient_id = $2
         `;
         const existingRequest = await client.query(existingRequestQuery, [senderId, recipientId]);
+        
         if (existingRequest.rows.length > 0) {
-            return res.status(400).send({ error: 'Connection request already exists.' });
+            console.log('Connection request already exists');
+            return res.status(400).json({ error: 'Connection request already exists.' });
+        }
+        
+        // Check if they're already connected
+        const connectionQuery = `
+            SELECT connection_id FROM user_connections 
+            WHERE follower_id = $1 AND following_id = $2
+        `;
+        const existingConnection = await client.query(connectionQuery, [senderId, recipientId]);
+        
+        if (existingConnection.rows.length > 0) {
+            console.log('Users are already connected');
+            return res.status(400).json({ error: 'Users are already connected.' });
         }
         
         // Begin transaction
         await client.query('BEGIN');
         
-        // Insert connection request
-        const insertRequestQuery = `
-            INSERT INTO connection_requests (sender_id, recipient_id, created_at) 
-            VALUES ($1, $2, NOW())
-            RETURNING request_id
-        `;
-        await client.query(insertRequestQuery, [senderId, recipientId]);
+        try {
+            // Insert connection request
+            const insertRequestQuery = `
+                INSERT INTO connection_requests (sender_id, recipient_id, created_at) 
+                VALUES ($1, $2, NOW())
+                RETURNING request_id
+            `;
+            const requestResult = await client.query(insertRequestQuery, [senderId, recipientId]);
+            console.log('Connection request created:', requestResult.rows[0]);
+            
+            // Get sender's display name for notification
+            const senderInfo = usersResult.rows.find(user => user.user_id === senderId);
+            const senderName = senderInfo?.display_name || 'Someone';
+            
+            console.log('Creating notification for recipient:', recipientId, 'from:', senderName);
+            
+            // Create notification for recipient
+            const notificationQuery = `
+                INSERT INTO notifications (user_id, type, title, message, related_user_id, is_read, created_at)
+                VALUES ($1, $2, $3, $4, $5, $6, NOW())
+                RETURNING notification_id
+            `;
+            const notificationResult = await client.query(notificationQuery, [
+                recipientId,
+                'connection_request',
+                'New Connection Request',
+                `${senderName} wants to connect with you`,
+                senderId,
+                false
+            ]);
+            
+            console.log('Notification created:', notificationResult.rows[0]);
+            
+            // Commit transaction
+            await client.query('COMMIT');
+            console.log('Transaction committed successfully');
+            
+            res.status(200).json({ 
+                message: 'Connection request sent successfully',
+                requestId: requestResult.rows[0].request_id,
+                notificationId: notificationResult.rows[0].notification_id
+            });
+            
+        } catch (innerError) {
+            await client.query('ROLLBACK');
+            console.error('Transaction error:', innerError);
+            throw innerError;
+        }
         
-        // Get sender's display name for notification
-        const senderQuery = `SELECT display_name FROM users WHERE user_id = $1`;
-        const senderResult = await client.query(senderQuery, [senderId]);
-        const senderName = senderResult.rows[0]?.display_name || 'Someone';
-        
-        // Create notification for recipient
-        const notificationQuery = `
-            INSERT INTO notifications (user_id, type, title, message, related_user_id, is_read, created_at)
-            VALUES ($1, $2, $3, $4, $5, $6, NOW())
-        `;
-        await client.query(notificationQuery, [
-            recipientId,
-            'connection_request',
-            'New Connection Request',
-            `${senderName} wants to connect with you`,
-            senderId,
-            false
-        ]);
-        
-        // Commit transaction
-        await client.query('COMMIT');
-        
-        res.status(200).send({ message: 'Connection request sent.' });
     } catch (error) {
         console.error('Error sending connection request:', error);
-        await client.query('ROLLBACK');
-        res.status(500).send({ error: 'Failed to send connection request.' });
+        res.status(500).json({ error: 'Failed to send connection request: ' + error.message });
     }
 });
 
@@ -683,6 +722,64 @@ app.post('/api/users/notifications', async (req, res) => {
     } catch (error) {
         console.error('Error fetching notification data:', error);
         res.status(500).send({ error: 'Failed to fetch notification data.' });
+    }
+});
+
+// Get user notifications
+app.get('/api/notifications/:userId', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { limit = 20, offset = 0 } = req.query;
+        
+        const getNotificationsQuery = `
+            SELECT 
+                n.notification_id,
+                n.type,
+                n.title,
+                n.message,
+                n.is_read,
+                n.created_at,
+                u.display_name as "fromUserName",
+                u.username as "fromUserUsername",
+                u.profile_picture_url as "fromUserProfilePicture"
+            FROM notifications n
+            LEFT JOIN users u ON n.related_user_id = u.user_id
+            WHERE n.user_id = $1
+            ORDER BY n.created_at DESC
+            LIMIT $2 OFFSET $3
+        `;
+        
+        const result = await client.query(getNotificationsQuery, [userId, limit, offset]);
+        res.status(200).json(result.rows);
+    } catch (error) {
+        console.error('Error fetching notifications:', error);
+        res.status(500).json({ error: 'Failed to fetch notifications.' });
+    }
+});
+
+// Mark notification as read
+app.patch('/api/notifications/:notificationId/read', async (req, res) => {
+    try {
+        const { notificationId } = req.params;
+        const { userId } = req.body;
+        
+        const updateQuery = `
+            UPDATE notifications 
+            SET is_read = true 
+            WHERE notification_id = $1 AND user_id = $2
+            RETURNING notification_id
+        `;
+        
+        const result = await client.query(updateQuery, [notificationId, userId]);
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Notification not found.' });
+        }
+        
+        res.status(200).json({ message: 'Notification marked as read.' });
+    } catch (error) {
+        console.error('Error marking notification as read:', error);
+        res.status(500).json({ error: 'Failed to mark notification as read.' });
     }
 });
 
