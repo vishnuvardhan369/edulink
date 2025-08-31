@@ -668,6 +668,7 @@ app.put('/api/users/:userId', async (req, res) => {
             SET 
                 username = COALESCE($2, username),
                 display_name = COALESCE($3, display_name),
+                display_name_lowercase = COALESCE(LOWER($3), display_name_lowercase),
                 bio = COALESCE($4, bio),
                 profile_picture_url = COALESCE($5, profile_picture_url),
                 updated_at = NOW()

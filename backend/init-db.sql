@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS users (
     username TEXT UNIQUE NOT NULL,
     email TEXT UNIQUE NOT NULL,
     display_name TEXT NOT NULL,
+    display_name_lowercase TEXT NOT NULL,
     profile_picture_url TEXT,
     bio TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW(),
