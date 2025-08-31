@@ -286,7 +286,7 @@ app.post('/api/posts/:postId/like', async (req, res) => {
         }
         
         // Check if user already liked the post
-        const checkLikeQuery = `SELECT like_id FROM likes WHERE post_id = $1 AND user_id = $2`;
+        const checkLikeQuery = `SELECT 1 FROM likes WHERE post_id = $1 AND user_id = $2`;
         const likeResult = await client.query(checkLikeQuery, [postId, userId]);
         
         if (likeResult.rows.length > 0) {
