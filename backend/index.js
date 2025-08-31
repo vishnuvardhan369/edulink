@@ -1136,18 +1136,21 @@ app.get('/api/polls', async (req, res) => {
                     '[]'::json
                 ) as options,
                 COALESCE(
-                    json_agg(
-                        DISTINCT jsonb_build_object(
-                            'userId', pv.user_id,
-                            'optionId', pv.option_id
+                    (
+                        SELECT json_agg(
+                            jsonb_build_object(
+                                'userId', pv2.user_id,
+                                'optionId', pv2.option_id
+                            )
                         )
-                    ) FILTER (WHERE pv.user_id IS NOT NULL), 
+                        FROM poll_votes pv2 
+                        WHERE pv2.poll_id = p.poll_id
+                    ),
                     '[]'::json
                 ) as "userVotes"
             FROM polls p
             JOIN users u ON p.user_id = u.user_id
             LEFT JOIN poll_options po ON p.poll_id = po.poll_id
-            LEFT JOIN poll_votes pv ON p.poll_id = pv.poll_id
             LEFT JOIN (
                 SELECT 
                     option_id,
@@ -1341,18 +1344,21 @@ app.get('/api/feed', async (req, res) => {
                         '[]'::json
                     ) as options,
                     COALESCE(
-                        json_agg(
-                            DISTINCT jsonb_build_object(
-                                'userId', pv.user_id,
-                                'optionId', pv.option_id
+                        (
+                            SELECT json_agg(
+                                jsonb_build_object(
+                                    'userId', pv2.user_id,
+                                    'optionId', pv2.option_id
+                                )
                             )
-                        ) FILTER (WHERE pv.user_id IS NOT NULL), 
+                            FROM poll_votes pv2 
+                            WHERE pv2.poll_id = p.poll_id
+                        ),
                         '[]'::json
                     ) as "userVotes"
                 FROM polls p
                 JOIN users u ON p.user_id = u.user_id
                 LEFT JOIN poll_options po ON p.poll_id = po.poll_id
-                LEFT JOIN poll_votes pv ON p.poll_id = pv.poll_id
                 LEFT JOIN (
                     SELECT 
                         option_id,
