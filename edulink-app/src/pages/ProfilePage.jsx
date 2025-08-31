@@ -56,7 +56,15 @@ export default function ProfilePage({ viewingProfileId, currentUserData, navigat
         }
     }, [viewedUserData]);
 
-    if (profileLoading || !editFormData) return <div>Loading profile...</div>;
+    console.log('ProfilePage Debug:', {
+        viewingProfileId,
+        profileLoading,
+        viewedUserData: !!viewedUserData,
+        editFormData: !!editFormData,
+        currentUser: currentUser?.uid
+    });
+
+    if (profileLoading) return <div>Loading profile...</div>;
     if (!viewedUserData) return <div>User not found.</div>;
 
     const isOwnProfile = currentUser.uid === viewingProfileId;
@@ -136,25 +144,21 @@ export default function ProfilePage({ viewingProfileId, currentUserData, navigat
                 username: editFormData.username,
                 displayName: editFormData.displayName,
                 bio: editFormData.bio,
-                profilePictureUrl: editFormData.profilePictureUrl,
                 headline: editFormData.headline,
                 location: editFormData.location,
                 skills: editFormData.skills,
-                socialLinks: editFormData.socialLinks
+                socialLinks: editFormData.socialLinks,
+                profilePictureUrl: editFormData.profilePictureUrl
             };
             const saveResponse = await apiCall(`/api/users/${auth.currentUser.uid}`, {
                 method: 'PUT',
                 body: JSON.stringify(dataToSave)
             });
             if (!saveResponse.ok) throw new Error('Failed to save profile');
-            
-            // Refresh both the viewed profile data and current user data
             await refetch();
-            await onProfileUpdate();
             setIsEditing(false);
             alert('Profile updated successfully!');
         } catch (error) {
-            console.error('Error updating profile:', error);
             alert('Failed to update profile.');
         }
     };

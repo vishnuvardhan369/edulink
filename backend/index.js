@@ -145,8 +145,8 @@ app.post('/api/posts', async (req, res) => {
             console.log('DEBUG: User not found, creating user:', userId);
             // Create user with basic info (this should ideally come from frontend)
             const createUserQuery = `
-                INSERT INTO users (user_id, username, email, display_name, display_name_lowercase) 
-                VALUES ($1, $2, $3, $4, $5)
+                INSERT INTO users (user_id, username, email, display_name, display_name_lowercase, created_at) 
+                VALUES ($1, $2, $3, $4, $5, NOW())
             `;
             // Use userId as fallback values (frontend should call proper user creation endpoint)
             const tempUsername = `user_${userId.slice(-8)}`;
@@ -397,12 +397,12 @@ app.get('/api/users/search', async (req, res) => {
                 bio
             FROM users 
             WHERE 
-                display_name_lowercase LIKE LOWER($1) OR 
+                LOWER(display_name) LIKE LOWER($1) OR 
                 LOWER(username) LIKE LOWER($1)
             ORDER BY 
                 CASE 
                     WHEN LOWER(username) = LOWER($2) THEN 1
-                    WHEN display_name_lowercase = LOWER($2) THEN 2
+                    WHEN LOWER(display_name) = LOWER($2) THEN 2
                     WHEN LOWER(username) LIKE LOWER($1) THEN 3
                     ELSE 4
                 END
@@ -611,10 +611,6 @@ app.get('/api/users/:userId', async (req, res) => {
                 display_name as "displayName",
                 profile_picture_url as "profilePictureUrl",
                 bio,
-                headline,
-                location,
-                skills,
-                social_links as "socialLinks",
                 created_at as "createdAt"
             FROM users 
             WHERE user_id = $1
@@ -665,35 +661,20 @@ app.get('/api/users/:userId', async (req, res) => {
 app.put('/api/users/:userId', async (req, res) => {
     try {
         const { userId } = req.params;
-        const { username, displayName, bio, profilePictureUrl, headline, location, skills, socialLinks } = req.body;
+        const { username, displayName, bio, profilePictureUrl } = req.body;
         
         const updateUserQuery = `
             UPDATE users 
             SET 
                 username = COALESCE($2, username),
                 display_name = COALESCE($3, display_name),
-                display_name_lowercase = COALESCE(LOWER($3), display_name_lowercase),
                 bio = COALESCE($4, bio),
-                profile_picture_url = COALESCE($5, profile_picture_url),
-                headline = COALESCE($6, headline),
-                location = COALESCE($7, location),
-                skills = COALESCE($8::jsonb, skills),
-                social_links = COALESCE($9::jsonb, social_links)
+                profile_picture_url = COALESCE($5, profile_picture_url)
             WHERE user_id = $1
-            RETURNING user_id as id, username, display_name as "displayName", bio, profile_picture_url as "profilePictureUrl", headline, location, skills, social_links as "socialLinks"
+            RETURNING user_id as id, username, display_name as "displayName", bio, profile_picture_url as "profilePictureUrl"
         `;
         
-        const result = await client.query(updateUserQuery, [
-            userId, 
-            username, 
-            displayName, 
-            bio, 
-            profilePictureUrl,
-            headline,
-            location,
-            skills ? JSON.stringify(skills) : null,
-            socialLinks ? JSON.stringify(socialLinks) : null
-        ]);
+        const result = await client.query(updateUserQuery, [userId, username, displayName, bio, profilePictureUrl]);
         if (result.rows.length === 0) {
             return res.status(404).send({ error: 'User not found.' });
         }
@@ -720,8 +701,8 @@ app.post('/api/users', async (req, res) => {
         }
         
         const insertUserQuery = `
-            INSERT INTO users (user_id, username, email, display_name, display_name_lowercase, profile_picture_url, bio) 
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            INSERT INTO users (user_id, username, email, display_name, display_name_lowercase, profile_picture_url, bio, created_at) 
+            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
             ON CONFLICT (user_id) DO UPDATE SET
                 username = EXCLUDED.username,
                 email = EXCLUDED.email,
