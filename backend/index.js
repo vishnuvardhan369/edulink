@@ -19,13 +19,28 @@ const client = new Client({
   }
 });
 
-// Connect to PostgreSQL
-client.connect()
-  .then(() => console.log('Connected to Neon PostgreSQL database'))
-  .catch(err => {
+// Connect to PostgreSQL with error handling
+const connectToDatabase = async () => {
+  try {
+    await client.connect();
+    console.log('Connected to Neon PostgreSQL database');
+    
+    // Handle connection errors
+    client.on('error', (err) => {
+      console.error('Database connection error:', err);
+      if (err.code === 'ECONNRESET' || err.code === 'ENOTFOUND') {
+        console.log('Attempting to reconnect to database...');
+        setTimeout(connectToDatabase, 5000);
+      }
+    });
+    
+  } catch (err) {
     console.error('Error connecting to PostgreSQL:', err);
-    process.exit(1);
-  });
+    setTimeout(connectToDatabase, 5000);
+  }
+};
+
+connectToDatabase();
 
 
 // --- Express Setup ---
