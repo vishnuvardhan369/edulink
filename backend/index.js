@@ -145,15 +145,15 @@ app.post('/api/posts', async (req, res) => {
             console.log('DEBUG: User not found, creating user:', userId);
             // Create user with basic info (this should ideally come from frontend)
             const createUserQuery = `
-                INSERT INTO users (user_id, username, email, display_name, display_name_lowercase) 
-                VALUES ($1, $2, $3, $4, $5)
+                INSERT INTO users (user_id, username, email, display_name) 
+                VALUES ($1, $2, $3, $4)
             `;
             // Use userId as fallback values (frontend should call proper user creation endpoint)
             const tempUsername = `user_${userId.slice(-8)}`;
             const tempEmail = `${userId}@temp.com`;
             const tempDisplayName = `User ${userId.slice(-8)}`;
             console.log('DEBUG: Creating temp user with:', { tempUsername, tempEmail, tempDisplayName });
-            await client.query(createUserQuery, [userId, tempUsername, tempEmail, tempDisplayName, tempDisplayName.toLowerCase()]);
+            await client.query(createUserQuery, [userId, tempUsername, tempEmail, tempDisplayName]);
             console.log('DEBUG: Created temporary user profile');
         }
         
@@ -701,19 +701,18 @@ app.post('/api/users', async (req, res) => {
         }
         
         const insertUserQuery = `
-            INSERT INTO users (user_id, username, email, display_name, display_name_lowercase, profile_picture_url, bio) 
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            INSERT INTO users (user_id, username, email, display_name, profile_picture_url, bio) 
+            VALUES ($1, $2, $3, $4, $5, $6)
             ON CONFLICT (user_id) DO UPDATE SET
                 username = EXCLUDED.username,
                 email = EXCLUDED.email,
                 display_name = EXCLUDED.display_name,
-                display_name_lowercase = EXCLUDED.display_name_lowercase,
                 profile_picture_url = EXCLUDED.profile_picture_url,
                 bio = EXCLUDED.bio
             RETURNING user_id as id, username, display_name as "displayName", profile_picture_url as "profilePictureUrl", bio
         `;
         
-        const result = await client.query(insertUserQuery, [userId, username, email, displayName, displayName.toLowerCase(), profilePictureUrl, bio]);
+        const result = await client.query(insertUserQuery, [userId, username, email, displayName, profilePictureUrl, bio]);
         console.log('DEBUG: User created successfully:', result.rows[0]);
         res.status(201).send(result.rows[0]);
     } catch (error) {
