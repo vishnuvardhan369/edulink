@@ -125,8 +125,8 @@ app.post('/api/posts', async (req, res) => {
         
         // Insert post into PostgreSQL
         const insertPostQuery = `
-            INSERT INTO posts (user_id, description, created_at, updated_at) 
-            VALUES ($1, $2, NOW(), NOW()) 
+            INSERT INTO posts (user_id, description, created_at) 
+            VALUES ($1, $2, NOW()) 
             RETURNING post_id, created_at
         `;
         const postResult = await client.query(insertPostQuery, [userId, description]);
@@ -286,8 +286,8 @@ app.post('/api/posts/:postId/comment', async (req, res) => {
         
         // Add comment
         const insertCommentQuery = `
-            INSERT INTO comments (post_id, user_id, comment_text, created_at, updated_at) 
-            VALUES ($1, $2, $3, NOW(), NOW())
+            INSERT INTO comments (post_id, user_id, comment_text, created_at) 
+            VALUES ($1, $2, $3, NOW())
         `;
         await client.query(insertCommentQuery, [postId, userId, text]);
         
@@ -604,8 +604,7 @@ app.put('/api/users/:userId', async (req, res) => {
                 username = COALESCE($2, username),
                 display_name = COALESCE($3, display_name),
                 bio = COALESCE($4, bio),
-                profile_picture_url = COALESCE($5, profile_picture_url),
-                updated_at = NOW()
+                profile_picture_url = COALESCE($5, profile_picture_url)
             WHERE user_id = $1
             RETURNING user_id as id, username, display_name as "displayName", bio, profile_picture_url as "profilePictureUrl"
         `;
@@ -635,15 +634,14 @@ app.post('/api/users', async (req, res) => {
         }
         
         const insertUserQuery = `
-            INSERT INTO users (user_id, username, email, display_name, profile_picture_url, bio, created_at, updated_at) 
-            VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+            INSERT INTO users (user_id, username, email, display_name, profile_picture_url, bio, created_at) 
+            VALUES ($1, $2, $3, $4, $5, $6, NOW())
             ON CONFLICT (user_id) DO UPDATE SET
                 username = EXCLUDED.username,
                 email = EXCLUDED.email,
                 display_name = EXCLUDED.display_name,
                 profile_picture_url = EXCLUDED.profile_picture_url,
-                bio = EXCLUDED.bio,
-                updated_at = NOW()
+                bio = EXCLUDED.bio
             RETURNING user_id as id, username, display_name as "displayName", profile_picture_url as "profilePictureUrl", bio
         `;
         
