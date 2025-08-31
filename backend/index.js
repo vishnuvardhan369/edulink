@@ -124,6 +124,22 @@ app.post('/api/posts', async (req, res) => {
         const { userId, description, imageUrls } = req.body;
         if (!userId || !description) return res.status(400).send({ error: 'userId and description are required.' });
         
+        // Check if user exists, create if not
+        const checkUserQuery = `SELECT user_id FROM users WHERE user_id = $1`;
+        const userResult = await client.query(checkUserQuery, [userId]);
+        
+        if (userResult.rows.length === 0) {
+            console.log('DEBUG: User not found, creating user:', userId);
+            // Create user with basic info (this should ideally come from frontend)
+            const createUserQuery = `
+                INSERT INTO users (user_id, username, email, display_name, created_at) 
+                VALUES ($1, $2, $3, $4, NOW())
+            `;
+            // Use userId as fallback values (frontend should call proper user creation endpoint)
+            await client.query(createUserQuery, [userId, `user_${userId.slice(-8)}`, `${userId}@temp.com`, `User ${userId.slice(-8)}`]);
+            console.log('DEBUG: Created temporary user profile');
+        }
+        
         // Insert post into PostgreSQL
         const insertPostQuery = `
             INSERT INTO posts (user_id, description, created_at) 

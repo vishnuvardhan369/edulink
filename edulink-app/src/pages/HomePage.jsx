@@ -1,8 +1,6 @@
 import React from 'react';
 import CreatePost from '../components/CreatePost';
 import Post from '../components/Post';
-import { doc, getDoc } from 'firebase/firestore';
-import { db } from '../App';
 import { apiCall } from '../config/api';
 
 // New component to show connection requests
@@ -15,9 +13,18 @@ function ConnectionRequests({ requests, navigateToProfile }) {
                 setRequestingUsers([]);
                 return;
             }
-            const userPromises = requests.map(uid => getDoc(doc(db, 'users', uid)));
-            const userDocs = await Promise.all(userPromises);
-            setRequestingUsers(userDocs.filter(doc => doc.exists()).map(doc => ({ id: doc.id, ...doc.data() })));
+            try {
+                const response = await apiCall('/api/users/notifications', {
+                    method: 'POST',
+                    body: JSON.stringify({ userIds: requests })
+                });
+                if (response.ok) {
+                    const users = await response.json();
+                    setRequestingUsers(users);
+                }
+            } catch (error) {
+                console.error('Error fetching requesting users:', error);
+            }
         };
         fetchUsers();
     }, [requests]);

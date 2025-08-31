@@ -1,6 +1,5 @@
 import React from 'react';
-import { doc, getDoc } from 'firebase/firestore';
-import { db, auth } from '../App';
+import { auth } from '../App';
 import { apiCall } from '../config/api';
 
 // Helper component to display a single chat conversation in the list
@@ -12,10 +11,14 @@ function ChatListItem({ chat, navigateToChat }) {
         const otherUserId = chat.participants.find(uid => uid !== currentUser.uid);
         if (otherUserId) {
             const fetchOtherUser = async () => {
-                const userDocRef = doc(db, 'users', otherUserId);
-                const userDocSnap = await getDoc(userDocRef);
-                if (userDocSnap.exists()) {
-                    setOtherUser(userDocSnap.data());
+                try {
+                    const response = await apiCall(`/api/users/${otherUserId}`);
+                    if (response.ok) {
+                        const userData = await response.json();
+                        setOtherUser(userData);
+                    }
+                } catch (error) {
+                    console.error('Error fetching user:', error);
                 }
             };
             fetchOtherUser();

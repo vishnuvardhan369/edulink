@@ -1,6 +1,5 @@
 import React from 'react';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
-import { db, auth } from '../App';
+import { auth } from '../App';
 import { apiCall } from '../config/api';
 
 // This is a helper hook to fetch profile data for any user
@@ -14,9 +13,18 @@ function useProfileData(userId) {
             return;
         };
         setLoading(true);
-        const userDocRef = doc(db, 'users', userId);
-        const userDocSnap = await getDoc(userDocRef);
-        setProfileData(userDocSnap.exists() ? userDocSnap.data() : null);
+        try {
+            const response = await apiCall(`/api/users/${userId}`);
+            if (response.ok) {
+                const userData = await response.json();
+                setProfileData(userData);
+            } else {
+                setProfileData(null);
+            }
+        } catch (error) {
+            console.error('Error fetching user data:', error);
+            setProfileData(null);
+        }
         setLoading(false);
     };
 
@@ -92,8 +100,11 @@ export default function ProfilePage({ viewingProfileId, currentUserData, navigat
             });
             if (!uploadResponse.ok) throw new Error('Failed to upload file');
             const permanentUrl = `https://${AZURE_STORAGE_ACCOUNT_NAME}.blob.core.windows.net/profile-pictures/${blobName}`;
-            const userDocRef = doc(db, 'users', currentUser.uid);
-            await updateDoc(userDocRef, { profilePictureUrl: permanentUrl });
+            const updateResponse = await apiCall(`/api/users/${currentUser.uid}`, {
+                method: 'PUT',
+                body: JSON.stringify({ profilePictureUrl: permanentUrl })
+            });
+            if (!updateResponse.ok) throw new Error('Failed to update profile picture');
             await refetch();
             await onProfileUpdate();
             alert('Profile picture updated!');
@@ -120,13 +131,18 @@ export default function ProfilePage({ viewingProfileId, currentUserData, navigat
         }));
     };
     const handleSave = async () => {
-        const userDocRef = doc(db, 'users', auth.currentUser.uid);
         try {
             const dataToSave = {
-                ...editFormData,
-                displayName_lowercase: editFormData.displayName.toLowerCase()
+                username: editFormData.username,
+                displayName: editFormData.displayName,
+                bio: editFormData.bio,
+                profilePictureUrl: editFormData.profilePictureUrl
             };
-            await updateDoc(userDocRef, dataToSave);
+            const saveResponse = await apiCall(`/api/users/${auth.currentUser.uid}`, {
+                method: 'PUT',
+                body: JSON.stringify(dataToSave)
+            });
+            if (!saveResponse.ok) throw new Error('Failed to save profile');
             await refetch();
             setIsEditing(false);
             alert('Profile updated successfully!');

@@ -1,5 +1,4 @@
 import React from 'react';
-import { doc, getDoc } from 'firebase/firestore';
 import { auth } from '../App';
 import { apiCall } from '../config/api';
 
@@ -20,9 +19,15 @@ function PostHeader({ userId, timestamp, navigateToProfile }) {
     React.useEffect(() => {
         const fetchAuthor = async () => {
             if (!userId) return;
-            const userDocRef = doc(db, 'users', userId);
-            const userDocSnap = await getDoc(userDocRef);
-            if (userDocSnap.exists()) setAuthor(userDocSnap.data());
+            try {
+                const response = await apiCall(`/api/users/${userId}`);
+                if (response.ok) {
+                    const userData = await response.json();
+                    setAuthor(userData);
+                }
+            } catch (error) {
+                console.error('Error fetching user:', error);
+            }
         };
         fetchAuthor();
     }, [userId]);

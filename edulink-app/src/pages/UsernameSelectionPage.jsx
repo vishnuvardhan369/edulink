@@ -1,6 +1,5 @@
 import React from 'react';
-import { doc, getDoc, writeBatch } from 'firebase/firestore';
-import { db } from '../App';
+import { apiCall } from '../config/api';
 
 function useDebounce(value, delay) {
     const [debouncedValue, setDebouncedValue] = React.useState(value);
@@ -23,10 +22,23 @@ export default function UsernameSelectionPage({ user, onUsernameSet }) {
         const checkUsername = async () => {
             if (debouncedUsername.length < 3) return;
             setIsChecking(true);
-            const usernameDocRef = doc(db, 'usernames', debouncedUsername);
-            const usernameDocSnap = await getDoc(usernameDocRef);
-            setFeedback(usernameDocSnap.exists() ? 'Username is already taken.' : 'Username is available!');
-            setIsValid(!usernameDocSnap.exists());
+            try {
+                // Check if username exists by searching for it
+                const response = await apiCall(`/api/users/search?query=${debouncedUsername}`);
+                if (response.ok) {
+                    const users = await response.json();
+                    const usernameExists = users.some(u => u.username.toLowerCase() === debouncedUsername.toLowerCase());
+                    setFeedback(usernameExists ? 'Username is already taken.' : 'Username is available!');
+                    setIsValid(!usernameExists);
+                } else {
+                    setFeedback('Error checking username availability.');
+                    setIsValid(false);
+                }
+            } catch (error) {
+                console.error('Error checking username:', error);
+                setFeedback('Error checking username availability.');
+                setIsValid(false);
+            }
             setIsChecking(false);
         };
         if (/^[a-zA-Z0-9_]{3,15}$/.test(debouncedUsername)) checkUsername();
@@ -38,36 +50,29 @@ export default function UsernameSelectionPage({ user, onUsernameSet }) {
         if (!isValid) return; 
         setIsSubmitting(true);
         try {
-            const userDocRef = doc(db, 'users', user.uid);
-            const usernameDocRef = doc(db, 'usernames', username);
-            const batch = writeBatch(db);
-            
             const displayName = user.displayName || username;
 
             const newUserData = {
-                username: username, // already lowercase
-                displayName: displayName,
-                // **NEW**: Add the lowercase version for searching
-                displayName_lowercase: displayName.toLowerCase(),
+                userId: user.uid,
+                username: username,
                 email: user.email,
-                uid: user.uid,
-                createdAt: new Date(),
+                displayName: displayName,
                 profilePictureUrl: user.photoURL || `https://placehold.co/400x400/EBF4FF/76A9FA?text=${username.charAt(0).toUpperCase()}`,
-                headline: '',
-                bio: '',
-                location: '',
-                skills: [],
-                socialLinks: { linkedin: '', github: '' },
-                followers: [],
-                following: [],
-                connectionRequestsSent: [],
-                connectionRequestsReceived: []
+                bio: ''
             };
             
-            batch.set(userDocRef, newUserData);
-            batch.set(usernameDocRef, { uid: user.uid });
-            await batch.commit();
-            onUsernameSet();
+            const response = await apiCall('/api/users', {
+                method: 'POST',
+                body: JSON.stringify(newUserData)
+            });
+            
+            if (response.ok) {
+                onUsernameSet();
+            } else {
+                const errorData = await response.json();
+                setFeedback(errorData.error || 'Could not save username.');
+                setIsSubmitting(false);
+            }
         } catch (error) { 
             console.error("Error setting username:", error);
             setFeedback('Could not save username.'); 
