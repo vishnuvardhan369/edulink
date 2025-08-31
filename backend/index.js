@@ -611,6 +611,10 @@ app.get('/api/users/:userId', async (req, res) => {
                 display_name as "displayName",
                 profile_picture_url as "profilePictureUrl",
                 bio,
+                headline,
+                location,
+                skills,
+                social_links as "socialLinks",
                 created_at as "createdAt"
             FROM users 
             WHERE user_id = $1
@@ -661,7 +665,19 @@ app.get('/api/users/:userId', async (req, res) => {
 app.put('/api/users/:userId', async (req, res) => {
     try {
         const { userId } = req.params;
-        const { username, displayName, bio, profilePictureUrl } = req.body;
+        const { username, displayName, bio, headline, location, skills, socialLinks, profilePictureUrl } = req.body;
+        
+        console.log('Backend: PUT /api/users/:userId received data:', {
+            userId,
+            username,
+            displayName,
+            bio,
+            headline,
+            location,
+            skills,
+            socialLinks,
+            profilePictureUrl
+        });
         
         const updateUserQuery = `
             UPDATE users 
@@ -669,12 +685,35 @@ app.put('/api/users/:userId', async (req, res) => {
                 username = COALESCE($2, username),
                 display_name = COALESCE($3, display_name),
                 bio = COALESCE($4, bio),
-                profile_picture_url = COALESCE($5, profile_picture_url)
+                headline = COALESCE($5, headline),
+                location = COALESCE($6, location),
+                skills = COALESCE($7::jsonb, skills),
+                social_links = COALESCE($8::jsonb, social_links),
+                profile_picture_url = COALESCE($9, profile_picture_url)
             WHERE user_id = $1
-            RETURNING user_id as id, username, display_name as "displayName", bio, profile_picture_url as "profilePictureUrl"
+            RETURNING 
+                user_id as id, 
+                username, 
+                display_name as "displayName", 
+                bio, 
+                headline,
+                location,
+                skills,
+                social_links as "socialLinks",
+                profile_picture_url as "profilePictureUrl"
         `;
         
-        const result = await client.query(updateUserQuery, [userId, username, displayName, bio, profilePictureUrl]);
+        const result = await client.query(updateUserQuery, [
+            userId, 
+            username, 
+            displayName, 
+            bio, 
+            headline, 
+            location, 
+            skills ? JSON.stringify(skills) : null,
+            socialLinks ? JSON.stringify(socialLinks) : null,
+            profilePictureUrl
+        ]);
         if (result.rows.length === 0) {
             return res.status(404).send({ error: 'User not found.' });
         }

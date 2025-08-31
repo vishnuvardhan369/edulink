@@ -150,11 +150,17 @@ export default function ProfilePage({ viewingProfileId, currentUserData, navigat
                 socialLinks: editFormData.socialLinks,
                 profilePictureUrl: editFormData.profilePictureUrl
             };
+            console.log('ProfilePage: Saving data:', dataToSave);
             const saveResponse = await apiCall(`/api/users/${auth.currentUser.uid}`, {
                 method: 'PUT',
                 body: JSON.stringify(dataToSave)
             });
-            if (!saveResponse.ok) throw new Error('Failed to save profile');
+            console.log('ProfilePage: Save response status:', saveResponse.status);
+            if (!saveResponse.ok) {
+                const errorText = await saveResponse.text();
+                console.error('ProfilePage: Save error:', errorText);
+                throw new Error('Failed to save profile');
+            }
             await refetch();
             setIsEditing(false);
             alert('Profile updated successfully!');
