@@ -217,7 +217,7 @@ app.get('/api/posts', async (req, res) => {
                             'text', c.comment_text,
                             'createdAt', EXTRACT(EPOCH FROM c.created_at) * 1000
                         )
-                    ) FILTER (WHERE c.comment_id IS NOT NULL), 
+                    ) FILTER (WHERE c.comment_text IS NOT NULL), 
                     '[]'::json
                 ) as comments
             FROM posts p
@@ -357,7 +357,7 @@ app.post('/api/posts/:postId/comment', async (req, res) => {
                             'text', c.comment_text,
                             'createdAt', EXTRACT(EPOCH FROM c.created_at) * 1000
                         )
-                    ) FILTER (WHERE c.comment_id IS NOT NULL), 
+                    ) FILTER (WHERE c.comment_text IS NOT NULL), 
                     '[]'::json
                 ) as comments
             FROM posts p
