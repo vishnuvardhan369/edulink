@@ -75,7 +75,7 @@ const sharedKeyCredential = new StorageSharedKeyCredential(accountName, accountK
 // 2. --- ALL API ROUTES ---
 
 // Health Check
-app.get('/', (req, res) => res.send('EduLink Backend is running!'));
+app.get('/', (req, res) => res.send('EduLink Backend is running! v2.0 - DB Compatible'));
 
 // PROFILE PICTURE UPLOAD URL
 app.post('/api/generate-upload-url', (req, res) => {
@@ -120,6 +120,7 @@ app.post('/api/generate-post-upload-url', (req, res) => {
 // POSTS ROUTES
 app.post('/api/posts', async (req, res) => {
     try {
+        console.log('DEBUG: Creating post with updated query (no updated_at)');
         const { userId, description, imageUrls } = req.body;
         if (!userId || !description) return res.status(400).send({ error: 'userId and description are required.' });
         
@@ -152,6 +153,7 @@ app.post('/api/posts', async (req, res) => {
 
 app.get('/api/posts', async (req, res) => {
     try {
+        console.log('DEBUG: Fetching posts with updated query (no pi.created_at)');
         const postsQuery = `
             SELECT 
                 p.post_id as id,
