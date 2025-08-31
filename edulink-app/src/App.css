@@ -10,14 +10,7 @@
   background: linear-gradient(135deg, #f8f9fa 0%, #e3f2fd 100%);
 }
 
-/* Legacy compatibility - keeping some existing styles for smooth transition */
-.auth-page-wrapper {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    min-height: 100vh;
-    padding: 1rem;
-}
+/* Remove the auth-page-wrapper styles since we're using AuthPage.css for full control */
 
 .notification-button {
     position: relative;
