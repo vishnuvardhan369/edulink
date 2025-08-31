@@ -1,7 +1,7 @@
 import React from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, onAuthStateChanged, signOut } from 'firebase/auth';
-import { getFirestore, doc, getDoc } from 'firebase/firestore';
+import { apiCall } from './config/api';
 import './App.css';
 
 // Import our page components
@@ -26,7 +26,6 @@ const firebaseConfig = {
 
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-export const db = getFirestore(app);
 
 // --- Main App Component ---
 export default function App() {
@@ -37,9 +36,18 @@ export default function App() {
 
     const fetchCurrentUserData = async (currentUser) => {
         if (currentUser) {
-            const userDocRef = doc(db, 'users', currentUser.uid);
-            const userDocSnap = await getDoc(userDocRef);
-            setUserData(userDocSnap.exists() ? userDocSnap.data() : null);
+            try {
+                const response = await apiCall(`/api/users/${currentUser.uid}`);
+                if (response.ok) {
+                    const userData = await response.json();
+                    setUserData(userData);
+                } else {
+                    setUserData(null);
+                }
+            } catch (error) {
+                console.error('Error fetching user data:', error);
+                setUserData(null);
+            }
         } else {
             setUserData(null);
         }
