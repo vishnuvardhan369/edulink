@@ -53,14 +53,59 @@ function PostHeader({ userId, timestamp, navigateToProfile }) {
     );
 }
 
-function Comment({ comment, navigateToProfile }) {
+function Comment({ comment, navigateToProfile, onCommentDelete, currentUserId }) {
+    const isCommentAuthor = currentUserId === comment.userId;
+    
+    const handleDeleteComment = async () => {
+        if (!window.confirm("Are you sure you want to delete this comment?")) {
+            return;
+        }
+        if (onCommentDelete) {
+            onCommentDelete(comment.commentId || comment.id);
+        }
+    };
+    
     return (
         <div className="comment" style={{
             fontSize: 'var(--font-size-sm)', 
             marginTop: 'var(--spacing-sm)', 
             borderTop: '1px solid var(--border-color)', 
-            paddingTop: 'var(--spacing-sm)'
+            paddingTop: 'var(--spacing-sm)',
+            position: 'relative'
         }}>
+            {isCommentAuthor && (
+                <button 
+                    onClick={handleDeleteComment}
+                    className="btn btn-sm"
+                    style={{ 
+                        position: 'absolute', 
+                        top: 'var(--spacing-xs)', 
+                        right: 'var(--spacing-xs)', 
+                        background: 'none', 
+                        border: 'none', 
+                        fontSize: '16px', 
+                        cursor: 'pointer', 
+                        color: 'var(--text-secondary)',
+                        width: '24px',
+                        height: '24px',
+                        borderRadius: '50%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                    }}
+                    title="Delete Comment"
+                    onMouseEnter={(e) => {
+                        e.target.style.backgroundColor = 'var(--error-color)';
+                        e.target.style.color = 'white';
+                    }}
+                    onMouseLeave={(e) => {
+                        e.target.style.backgroundColor = 'transparent';
+                        e.target.style.color = 'var(--text-secondary)';
+                    }}
+                >
+                    &times;
+                </button>
+            )}
             <PostHeader userId={comment.userId} timestamp={comment.createdAt} navigateToProfile={navigateToProfile} />
             <p style={{
                 marginLeft: '50px', 
@@ -83,25 +128,33 @@ export default function Post({ post, onPostUpdate, onPostDelete, navigateToProfi
     const likes = post.likes || [];
     const comments = post.comments || [];
     const imageUrls = post.imageUrls || [];
-    const hasLiked = currentUser ? likes.includes(currentUser.uid) : false;
+    
+    // Fix like checking logic - likes array contains objects with userId property
+    const hasLiked = currentUser ? likes.some(like => like.userId === currentUser.uid) : false;
     const isAuthor = currentUser ? currentUser.uid === post.userId : false;
-
 
     const handleLike = async () => {
         if (!currentUser) return;
-        onPostUpdate({
-            ...post,
-            likes: hasLiked 
-                ? likes.filter(uid => uid !== currentUser.uid)
-                : [...likes, currentUser.uid]
-        });
+        
         try {
-            await apiCall(`/api/posts/${post.id}/like`, {
+            const response = await apiCall(`/api/posts/${post.id}/like`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',
                 body: JSON.stringify({ userId: currentUser.uid })
             });
+            
+            if (response.ok) {
+                // Update the post state based on current like status
+                const newLikes = hasLiked 
+                    ? likes.filter(like => like.userId !== currentUser.uid)
+                    : [...likes, { userId: currentUser.uid }];
+                    
+                onPostUpdate({
+                    ...post,
+                    likes: newLikes
+                });
+            }
         } catch (error) {
             console.error("Failed to update like status:", error);
         }
@@ -142,6 +195,34 @@ export default function Post({ post, onPostUpdate, onPostDelete, navigateToProfi
         } catch (err) { console.error('Error sharing:', err); }
     };
 
+    // **NEW**: Function to handle deleting a comment
+    const handleCommentDelete = async (commentId) => {
+        try {
+            const response = await apiCall(`/api/comments/${commentId}`, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ userId: currentUser.uid })
+            });
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Failed to delete comment.');
+            }
+            
+            // Update the post to remove the deleted comment
+            const updatedComments = comments.filter(comment => 
+                (comment.commentId || comment.id) !== commentId
+            );
+            onPostUpdate({
+                ...post,
+                comments: updatedComments
+            });
+        } catch (error) {
+            console.error("Comment delete failed:", error);
+            alert(error.message);
+        }
+    };
+
     // **NEW**: Function to handle deleting a post
     const handleDelete = async () => {
         if (!window.confirm("Are you sure you want to delete this post? This action cannot be undone.")) {
@@ -174,31 +255,37 @@ export default function Post({ post, onPostUpdate, onPostDelete, navigateToProfi
                     className="btn btn-sm"
                     style={{ 
                         position: 'absolute', 
-                        top: 'var(--spacing-sm)', 
-                        right: 'var(--spacing-sm)', 
-                        background: 'none', 
-                        border: 'none', 
-                        fontSize: '20px', 
+                        top: 'var(--spacing-md)', 
+                        right: 'var(--spacing-md)', 
+                        background: 'var(--bg-card)', 
+                        border: '1px solid var(--border-color)', 
+                        fontSize: '18px', 
                         cursor: 'pointer', 
                         color: 'var(--text-secondary)',
-                        width: '32px',
-                        height: '32px',
+                        width: '36px',
+                        height: '36px',
                         borderRadius: '50%',
                         display: 'flex',
                         alignItems: 'center',
-                        justifyContent: 'center'
+                        justifyContent: 'center',
+                        zIndex: 10,
+                        boxShadow: 'var(--shadow-sm)'
                     }}
                     title="Delete Post"
                     onMouseEnter={(e) => {
                         e.target.style.backgroundColor = 'var(--error-color)';
                         e.target.style.color = 'white';
+                        e.target.style.borderColor = 'var(--error-color)';
+                        e.target.style.transform = 'scale(1.1)';
                     }}
                     onMouseLeave={(e) => {
-                        e.target.style.backgroundColor = 'transparent';
+                        e.target.style.backgroundColor = 'var(--bg-card)';
                         e.target.style.color = 'var(--text-secondary)';
+                        e.target.style.borderColor = 'var(--border-color)';
+                        e.target.style.transform = 'scale(1)';
                     }}
                 >
-                    &times;
+                    ✕
                 </button>
             )}
 
@@ -285,7 +372,13 @@ export default function Post({ post, onPostUpdate, onPostDelete, navigateToProfi
                     </form>
                     <div className="comments-list">
                         {comments.map((comment, index) => (
-                            <Comment key={index} comment={comment} navigateToProfile={navigateToProfile} />
+                            <Comment 
+                                key={comment.commentId || comment.id || index} 
+                                comment={comment} 
+                                navigateToProfile={navigateToProfile}
+                                onCommentDelete={handleCommentDelete}
+                                currentUserId={currentUser?.uid}
+                            />
                         ))}
                         {comments.length === 0 && (
                             <p style={{ 

@@ -2,13 +2,18 @@ import React from 'react';
 import { auth } from '../App';
 import { apiCall } from '../config/api';
 
-export default function Poll({ poll, onPollUpdate }) {
+export default function Poll({ poll, onPollUpdate, navigateToProfile }) {
     const [userVotes, setUserVotes] = React.useState([]);
     const [isVoting, setIsVoting] = React.useState(false);
     const [showResults, setShowResults] = React.useState(false);
     
     const currentUserId = auth.currentUser?.uid;
-    const hasVoted = poll.userVotes && poll.userVotes.includes(currentUserId);
+    
+    // Check if current user has voted and get their specific votes
+    const currentUserVotes = poll.userVotes.filter(vote => vote.userId === currentUserId);
+    const hasVoted = currentUserVotes.length > 0;
+    const currentUserOptionIds = currentUserVotes.map(vote => vote.optionId);
+    
     const isExpired = poll.expiresAt && new Date() > new Date(poll.expiresAt);
     const isOwner = poll.userId === currentUserId;
     
@@ -18,14 +23,13 @@ export default function Poll({ poll, onPollUpdate }) {
     React.useEffect(() => {
         // Initialize user votes if they've already voted
         if (hasVoted) {
-            // Find which options this user voted for
-            const userOptionVotes = poll.options
-                .filter(option => poll.userVotes.includes(currentUserId))
-                .map(option => option.optionId);
-            setUserVotes(userOptionVotes);
+            setUserVotes(currentUserOptionIds);
             setShowResults(true);
+        } else {
+            setShowResults(false);
+            setUserVotes([]);
         }
-    }, [poll, currentUserId, hasVoted]);
+    }, [hasVoted, JSON.stringify(currentUserOptionIds)]);
     
     const handleVoteChange = (optionId) => {
         if (isExpired || isVoting) return;
@@ -106,9 +110,54 @@ export default function Poll({ poll, onPollUpdate }) {
     
     return (
         <div className="card poll-card">
+            {/* Delete Button for Owner */}
+            {isOwner && (
+                <button 
+                    onClick={deletePoll}
+                    className="btn btn-sm"
+                    style={{ 
+                        position: 'absolute', 
+                        top: 'var(--spacing-md)', 
+                        right: 'var(--spacing-md)', 
+                        background: 'var(--bg-card)', 
+                        border: '1px solid var(--border-color)', 
+                        fontSize: '18px', 
+                        cursor: 'pointer', 
+                        color: 'var(--text-secondary)',
+                        width: '36px',
+                        height: '36px',
+                        borderRadius: '50%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        zIndex: 10,
+                        boxShadow: 'var(--shadow-sm)'
+                    }}
+                    title="Delete Poll"
+                    onMouseEnter={(e) => {
+                        e.target.style.backgroundColor = 'var(--error-color)';
+                        e.target.style.color = 'white';
+                        e.target.style.borderColor = 'var(--error-color)';
+                        e.target.style.transform = 'scale(1.1)';
+                    }}
+                    onMouseLeave={(e) => {
+                        e.target.style.backgroundColor = 'var(--bg-card)';
+                        e.target.style.color = 'var(--text-secondary)';
+                        e.target.style.borderColor = 'var(--border-color)';
+                        e.target.style.transform = 'scale(1)';
+                    }}
+                >
+                    ✕
+                </button>
+            )}
+
             <div className="card-header">
                 <div className="d-flex align-items-center justify-content-between">
-                    <div className="d-flex align-items-center gap-3">
+                    <div 
+                        className="d-flex align-items-center gap-3"
+                        onClick={() => navigateToProfile && navigateToProfile(poll.userId)}
+                        style={{ cursor: 'pointer' }}
+                    >
                         <div className="avatar">
                             <img 
                                 src={poll.profilePictureUrl || 'https://via.placeholder.com/40'} 
@@ -123,15 +172,6 @@ export default function Poll({ poll, onPollUpdate }) {
                     </div>
                     <div className="d-flex align-items-center gap-2">
                         <span className="poll-badge">Poll</span>
-                        {isOwner && (
-                            <button 
-                                className="btn btn-sm btn-outline-danger"
-                                onClick={deletePoll}
-                                style={{ padding: '4px 8px' }}
-                            >
-                                Delete
-                            </button>
-                        )}
                     </div>
                 </div>
             </div>

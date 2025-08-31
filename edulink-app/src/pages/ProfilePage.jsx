@@ -212,17 +212,27 @@ export default function ProfilePage({ viewingProfileId, currentUserData, navigat
         
         if (isConnected) {
             return (
-                <button disabled className="btn btn-success">
-                    ✅ Connected
-                </button>
+                <div className="d-flex gap-2">
+                    <button disabled className="btn btn-success">
+                        ✅ Connected
+                    </button>
+                    <button onClick={() => handleConnection('unfollow')} className="btn btn-outline">
+                        Disconnect
+                    </button>
+                </div>
             );
         }
         
         if (hasReceivedRequest) {
             return (
-                <button onClick={() => handleConnection('accept-connect')} className="btn btn-success">
-                    ✅ Accept Request
-                </button>
+                <div className="d-flex gap-2">
+                    <button onClick={() => handleConnection('accept-connect')} className="btn btn-success">
+                        ✅ Accept Request
+                    </button>
+                    <button onClick={() => handleConnection('reject-request')} className="btn btn-outline">
+                        ❌ Decline
+                    </button>
+                </div>
             );
         }
         
@@ -241,7 +251,7 @@ export default function ProfilePage({ viewingProfileId, currentUserData, navigat
                 </button>
                 {isFollowingCurrentUser ? (
                     <button onClick={() => handleConnection('unfollow')} className="btn btn-outline">
-                        👥 Following
+                        Unfollow
                     </button>
                 ) : (
                     <button onClick={() => handleConnection('follow')} className="btn btn-secondary">
@@ -264,102 +274,282 @@ export default function ProfilePage({ viewingProfileId, currentUserData, navigat
                 </div>
             </nav>
 
-            {/* Profile Content */}
-            <div className="content-area" style={{ padding: 'var(--spacing-lg)', maxWidth: '800px', margin: '0 auto' }}>
-                <div className="card fade-in">
-                    {/* Profile Header */}
-                    <div className="profile-header">
-                        <div className="profile-info">
-                            <div className="avatar avatar-xl">
-                                <img src={viewedUserData.profilePictureUrl} alt={viewedUserData.displayName} className="avatar-img" />
+            {/* Profile Content - Full Width */}
+            <div className="content-area" style={{ padding: 'var(--spacing-lg)', maxWidth: '100%', margin: '0' }}>
+                <div className="card fade-in" style={{ maxWidth: '1200px', margin: '0 auto' }}>
+                    {/* Profile Header - Enhanced */}
+                    <div className="profile-header" style={{ 
+                        background: 'linear-gradient(135deg, var(--primary-50) 0%, var(--primary-100) 100%)',
+                        padding: 'var(--spacing-xl)',
+                        borderRadius: 'var(--border-radius-lg) var(--border-radius-lg) 0 0',
+                        marginBottom: 'var(--spacing-lg)'
+                    }}>
+                        <div className="profile-info" style={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: 'var(--spacing-xl)',
+                            flexWrap: 'wrap'
+                        }}>
+                            <div className="avatar avatar-xxl" style={{ flexShrink: 0 }}>
+                                <img 
+                                    src={viewedUserData.profilePictureUrl} 
+                                    alt={viewedUserData.displayName} 
+                                    className="avatar-img" 
+                                    style={{ 
+                                        width: '120px', 
+                                        height: '120px',
+                                        border: '4px solid white',
+                                        boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
+                                    }} 
+                                />
                             </div>
-                            <div className="profile-details">
-                                <h1>{viewedUserData.displayName}</h1>
-                                <p className="username">@{viewedUserData.username}</p>
+                            <div className="profile-details" style={{ flex: 1, minWidth: '200px' }}>
+                                <h1 style={{ 
+                                    fontSize: '2.5rem', 
+                                    fontWeight: 'var(--font-weight-bold)',
+                                    margin: '0 0 var(--spacing-sm) 0',
+                                    color: 'var(--text-primary)'
+                                }}>
+                                    {viewedUserData.displayName}
+                                </h1>
+                                <p className="username" style={{ 
+                                    fontSize: 'var(--font-size-lg)', 
+                                    opacity: 0.8,
+                                    margin: '0 0 var(--spacing-md) 0'
+                                }}>
+                                    @{viewedUserData.username}
+                                </p>
                                 {viewedUserData.headline && (
-                                    <p style={{ fontSize: 'var(--font-size-lg)', opacity: 0.9, margin: 'var(--spacing-sm) 0' }}>
+                                    <p style={{ 
+                                        fontSize: 'var(--font-size-lg)', 
+                                        opacity: 0.9, 
+                                        margin: '0 0 var(--spacing-md) 0',
+                                        fontStyle: 'italic'
+                                    }}>
                                         {viewedUserData.headline}
                                     </p>
                                 )}
-                                <div className="profile-stats">
-                                    <div className="profile-stat">
-                                        <span className="profile-stat-number">{followers.length}</span>
-                                        <span className="profile-stat-label">Followers</span>
+                                <div className="profile-stats" style={{ 
+                                    display: 'flex', 
+                                    gap: 'var(--spacing-lg)',
+                                    marginTop: 'var(--spacing-md)'
+                                }}>
+                                    <div className="profile-stat" style={{ textAlign: 'center' }}>
+                                        <span className="profile-stat-number" style={{ 
+                                            display: 'block',
+                                            fontSize: '1.5rem',
+                                            fontWeight: 'var(--font-weight-bold)',
+                                            color: 'var(--primary-600)'
+                                        }}>
+                                            {followers.length}
+                                        </span>
+                                        <span className="profile-stat-label" style={{ fontSize: 'var(--font-size-sm)' }}>
+                                            Followers
+                                        </span>
                                     </div>
-                                    <div className="profile-stat">
-                                        <span className="profile-stat-number">{following.length}</span>
-                                        <span className="profile-stat-label">Following</span>
+                                    <div className="profile-stat" style={{ textAlign: 'center' }}>
+                                        <span className="profile-stat-number" style={{ 
+                                            display: 'block',
+                                            fontSize: '1.5rem',
+                                            fontWeight: 'var(--font-weight-bold)',
+                                            color: 'var(--primary-600)'
+                                        }}>
+                                            {following.length}
+                                        </span>
+                                        <span className="profile-stat-label" style={{ fontSize: 'var(--font-size-sm)' }}>
+                                            Following
+                                        </span>
                                     </div>
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    {/* Profile Body */}
-                    <div className="card-body">
+                    {/* Profile Body - Enhanced Layout */}
+                    <div className="card-body" style={{ padding: 'var(--spacing-xl)' }}>
                         {/* Connection Buttons */}
-                        <div className="mb-3">
+                        <div className="mb-3" style={{ 
+                            textAlign: 'center', 
+                            marginBottom: 'var(--spacing-xl)',
+                            paddingBottom: 'var(--spacing-lg)',
+                            borderBottom: '1px solid var(--border-color)'
+                        }}>
                             {renderConnectionButtons()}
                         </div>
 
-                        {/* Bio */}
-                        {viewedUserData.bio && (
-                            <div className="mb-3">
-                                <p style={{ fontSize: 'var(--font-size-md)', lineHeight: 1.6 }}>
-                                    {viewedUserData.bio}
-                                </p>
+                        {/* Content Grid */}
+                        <div style={{ 
+                            display: 'grid', 
+                            gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+                            gap: 'var(--spacing-xl)'
+                        }}>
+                            {/* Left Column */}
+                            <div>
+                                {/* Bio */}
+                                {viewedUserData.bio && (
+                                    <div className="info-section" style={{ 
+                                        marginBottom: 'var(--spacing-lg)',
+                                        padding: 'var(--spacing-lg)',
+                                        backgroundColor: 'var(--surface-secondary)',
+                                        borderRadius: 'var(--border-radius-md)',
+                                        border: '1px solid var(--border-color)'
+                                    }}>
+                                        <h3 style={{ 
+                                            marginBottom: 'var(--spacing-md)',
+                                            color: 'var(--text-primary)',
+                                            fontSize: 'var(--font-size-lg)',
+                                            fontWeight: 'var(--font-weight-semibold)'
+                                        }}>
+                                            📝 About
+                                        </h3>
+                                        <p style={{ 
+                                            fontSize: 'var(--font-size-md)', 
+                                            lineHeight: 1.6,
+                                            margin: 0
+                                        }}>
+                                            {viewedUserData.bio}
+                                        </p>
+                                    </div>
+                                )}
+                                
+                                {/* Location */}
+                                {viewedUserData.location && (
+                                    <div className="info-section" style={{ 
+                                        marginBottom: 'var(--spacing-lg)',
+                                        padding: 'var(--spacing-lg)',
+                                        backgroundColor: 'var(--surface-secondary)',
+                                        borderRadius: 'var(--border-radius-md)',
+                                        border: '1px solid var(--border-color)'
+                                    }}>
+                                        <h3 style={{ 
+                                            marginBottom: 'var(--spacing-md)',
+                                            color: 'var(--text-primary)',
+                                            fontSize: 'var(--font-size-lg)',
+                                            fontWeight: 'var(--font-weight-semibold)'
+                                        }}>
+                                            📍 Location
+                                        </h3>
+                                        <p style={{ margin: 0, fontSize: 'var(--font-size-md)' }}>
+                                            {viewedUserData.location}
+                                        </p>
+                                    </div>
+                                )}
                             </div>
-                        )}
-                        
-                        {/* Location */}
-                        {viewedUserData.location && (
-                            <div className="mb-3">
-                                <div className="d-flex align-items-center gap-2">
-                                    <span style={{ fontSize: 'var(--font-size-lg)' }}>📍</span>
-                                    <span style={{ fontWeight: 'var(--font-weight-medium)' }}>Location:</span>
-                                    <span>{viewedUserData.location}</span>
-                                </div>
+
+                            {/* Right Column */}
+                            <div>
+                                {/* Skills */}
+                                {viewedUserData.skills && viewedUserData.skills.length > 0 && (
+                                    <div className="info-section" style={{ 
+                                        marginBottom: 'var(--spacing-lg)',
+                                        padding: 'var(--spacing-lg)',
+                                        backgroundColor: 'var(--surface-secondary)',
+                                        borderRadius: 'var(--border-radius-md)',
+                                        border: '1px solid var(--border-color)'
+                                    }}>
+                                        <h3 style={{ 
+                                            marginBottom: 'var(--spacing-md)',
+                                            color: 'var(--text-primary)',
+                                            fontSize: 'var(--font-size-lg)',
+                                            fontWeight: 'var(--font-weight-semibold)'
+                                        }}>
+                                            🛠️ Skills
+                                        </h3>
+                                        <div className="skills-container" style={{ 
+                                            display: 'flex',
+                                            flexWrap: 'wrap',
+                                            gap: 'var(--spacing-sm)'
+                                        }}>
+                                            {viewedUserData.skills.map((skill, index) => (
+                                                <span key={index} className="skill-tag" style={{
+                                                    padding: 'var(--spacing-xs) var(--spacing-sm)',
+                                                    backgroundColor: 'var(--primary-100)',
+                                                    color: 'var(--primary-700)',
+                                                    borderRadius: 'var(--border-radius-sm)',
+                                                    fontSize: 'var(--font-size-sm)',
+                                                    fontWeight: 'var(--font-weight-medium)',
+                                                    border: '1px solid var(--primary-200)'
+                                                }}>
+                                                    {skill}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                                
+                                {/* Social Links */}
+                                {viewedUserData.socialLinks && (viewedUserData.socialLinks.linkedin || viewedUserData.socialLinks.github) && (
+                                    <div className="info-section" style={{ 
+                                        marginBottom: 'var(--spacing-lg)',
+                                        padding: 'var(--spacing-lg)',
+                                        backgroundColor: 'var(--surface-secondary)',
+                                        borderRadius: 'var(--border-radius-md)',
+                                        border: '1px solid var(--border-color)'
+                                    }}>
+                                        <h3 style={{ 
+                                            marginBottom: 'var(--spacing-md)',
+                                            color: 'var(--text-primary)',
+                                            fontSize: 'var(--font-size-lg)',
+                                            fontWeight: 'var(--font-weight-semibold)'
+                                        }}>
+                                            🌐 Social Links
+                                        </h3>
+                                        <div className="social-links" style={{ 
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            gap: 'var(--spacing-sm)'
+                                        }}>
+                                            {viewedUserData.socialLinks.linkedin && (
+                                                <a 
+                                                    href={viewedUserData.socialLinks.linkedin} 
+                                                    target="_blank" 
+                                                    rel="noopener noreferrer" 
+                                                    className="social-link linkedin"
+                                                    style={{
+                                                        display: 'inline-flex',
+                                                        alignItems: 'center',
+                                                        gap: 'var(--spacing-sm)',
+                                                        padding: 'var(--spacing-sm) var(--spacing-md)',
+                                                        backgroundColor: '#0077b5',
+                                                        color: 'white',
+                                                        textDecoration: 'none',
+                                                        borderRadius: 'var(--border-radius-sm)',
+                                                        fontSize: 'var(--font-size-sm)',
+                                                        fontWeight: 'var(--font-weight-medium)',
+                                                        transition: 'all 0.2s ease'
+                                                    }}
+                                                >
+                                                    💼 LinkedIn
+                                                </a>
+                                            )}
+                                            {viewedUserData.socialLinks.github && (
+                                                <a 
+                                                    href={viewedUserData.socialLinks.github} 
+                                                    target="_blank" 
+                                                    rel="noopener noreferrer" 
+                                                    className="social-link github"
+                                                    style={{
+                                                        display: 'inline-flex',
+                                                        alignItems: 'center',
+                                                        gap: 'var(--spacing-sm)',
+                                                        padding: 'var(--spacing-sm) var(--spacing-md)',
+                                                        backgroundColor: '#333',
+                                                        color: 'white',
+                                                        textDecoration: 'none',
+                                                        borderRadius: 'var(--border-radius-sm)',
+                                                        fontSize: 'var(--font-size-sm)',
+                                                        fontWeight: 'var(--font-weight-medium)',
+                                                        transition: 'all 0.2s ease'
+                                                    }}
+                                                >
+                                                    💻 GitHub
+                                                </a>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
-                        )}
-                        
-                        {/* Skills */}
-                        {viewedUserData.skills && viewedUserData.skills.length > 0 && (
-                            <div className="mb-3">
-                                <div className="d-flex align-items-center gap-2 mb-2">
-                                    <span style={{ fontSize: 'var(--font-size-lg)' }}>🛠️</span>
-                                    <span style={{ fontWeight: 'var(--font-weight-medium)' }}>Skills:</span>
-                                </div>
-                                <div className="skills-container">
-                                    {viewedUserData.skills.map((skill, index) => (
-                                        <span key={index} className="skill-tag">
-                                            {skill}
-                                        </span>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-                        
-                        {/* Social Links */}
-                        {viewedUserData.socialLinks && (viewedUserData.socialLinks.linkedin || viewedUserData.socialLinks.github) && (
-                            <div className="mb-3">
-                                <div className="d-flex align-items-center gap-2 mb-2">
-                                    <span style={{ fontSize: 'var(--font-size-lg)' }}>🌐</span>
-                                    <span style={{ fontWeight: 'var(--font-weight-medium)' }}>Social Links:</span>
-                                </div>
-                                <div className="social-links">
-                                    {viewedUserData.socialLinks.linkedin && (
-                                        <a href={viewedUserData.socialLinks.linkedin} target="_blank" rel="noopener noreferrer" className="social-link linkedin">
-                                            LinkedIn
-                                        </a>
-                                    )}
-                                    {viewedUserData.socialLinks.github && (
-                                        <a href={viewedUserData.socialLinks.github} target="_blank" rel="noopener noreferrer" className="social-link github">
-                                            GitHub
-                                        </a>
-                                    )}
-                                </div>
-                            </div>
-                        )}
+                        </div>
                     </div>
                 </div>
             </div>

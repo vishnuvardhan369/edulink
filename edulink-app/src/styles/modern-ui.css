@@ -67,16 +67,32 @@ body {
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  width: 100%;
+  min-height: 100vh;
+}
+
+html {
+  width: 100%;
+  height: 100%;
 }
 
 /* Container and Layout */
 .app-container {
   min-height: 100vh;
+  width: 100%;
   background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%);
 }
 
+.edulink-app {
+  width: 100%;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
 .main-layout {
-  max-width: 1200px;
+  max-width: 1400px;
+  width: 100%;
   margin: 0 auto;
   padding: var(--spacing-md);
   display: grid;
@@ -85,8 +101,40 @@ body {
 }
 
 .content-area {
-  max-width: 680px;
+  width: 100%;
+  max-width: 800px;
   margin: 0 auto;
+  padding: var(--spacing-lg);
+}
+
+/* Responsive Layout */
+@media (max-width: 768px) {
+  .main-layout {
+    grid-template-columns: 1fr;
+    padding: var(--spacing-sm);
+    gap: var(--spacing-md);
+  }
+  
+  .content-area {
+    max-width: 100%;
+    padding: var(--spacing-sm);
+  }
+  
+  .edulink-app {
+    width: 100vw;
+  }
+  
+  body {
+    width: 100vw;
+    overflow-x: hidden;
+  }
+}
+
+@media (min-width: 769px) {
+  .content-area {
+    max-width: 100%;
+    width: 100%;
+  }
 }
 
 /* Cards */
@@ -128,10 +176,12 @@ body {
   position: sticky;
   top: 0;
   z-index: 1000;
+  width: 100%;
 }
 
 .navbar-content {
-  max-width: 1200px;
+  max-width: 1400px;
+  width: 100%;
   margin: 0 auto;
   padding: var(--spacing-md);
   display: flex;
@@ -150,6 +200,21 @@ body {
   display: flex;
   gap: var(--spacing-md);
   align-items: center;
+}
+
+/* Mobile navbar adjustments */
+@media (max-width: 768px) {
+  .navbar-content {
+    padding: var(--spacing-sm);
+  }
+  
+  .navbar-nav {
+    gap: var(--spacing-sm);
+  }
+  
+  .navbar-brand {
+    font-size: var(--font-size-lg);
+  }
 }
 
 /* Buttons */
@@ -312,6 +377,7 @@ body {
   box-shadow: var(--shadow-sm);
   margin-bottom: var(--spacing-lg);
   transition: all 0.3s ease;
+  position: relative;
 }
 
 .post:hover {
@@ -626,6 +692,7 @@ body {
 /* Poll Components Styles */
 .poll-card {
     margin-bottom: var(--spacing-lg);
+    position: relative;
 }
 
 .poll-badge {

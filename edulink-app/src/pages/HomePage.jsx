@@ -227,6 +227,7 @@ export default function HomePage({ userData, onSignOut, navigateToProfile, navig
                                 <Poll 
                                     poll={item} 
                                     onPollUpdate={handlePollUpdate}
+                                    navigateToProfile={navigateToProfile}
                                 />
                             )}
                         </div>

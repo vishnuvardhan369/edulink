@@ -382,6 +382,35 @@ app.post('/api/posts/:postId/comment', async (req, res) => {
     }
 });
 
+app.delete('/api/comments/:commentId', async (req, res) => {
+    try {
+        const { commentId } = req.params;
+        const { userId } = req.body;
+        if (!userId) return res.status(400).send({ error: 'User ID is required.' });
+        
+        // Check if comment exists and belongs to user
+        const checkCommentQuery = `SELECT user_id, post_id FROM comments WHERE comment_id = $1`;
+        const checkResult = await client.query(checkCommentQuery, [commentId]);
+        
+        if (checkResult.rows.length === 0) {
+            return res.status(404).send({ error: 'Comment not found.' });
+        }
+        
+        if (checkResult.rows[0].user_id !== userId) {
+            return res.status(403).send({ error: 'Forbidden' });
+        }
+        
+        // Delete comment
+        const deleteCommentQuery = `DELETE FROM comments WHERE comment_id = $1`;
+        await client.query(deleteCommentQuery, [commentId]);
+        
+        res.status(200).send({ message: 'Comment deleted successfully.' });
+    } catch (error) {
+        console.error('Error deleting comment:', error);
+        res.status(500).send({ error: 'Failed to delete comment.' });
+    }
+});
+
 // USER & CONNECTION ROUTES
 app.get('/api/users/search', async (req, res) => {
     try {
@@ -567,6 +596,28 @@ app.post('/api/users/:userId/cancel-request', async (req, res) => {
     } catch (error) {
         console.error('Error cancelling request:', error);
         res.status(500).send({ error: 'Failed to cancel request.' });
+    }
+});
+
+app.post('/api/users/:userId/reject-request', async (req, res) => {
+    try {
+        const { userId: senderId } = req.params;
+        const { currentUserId: recipientId } = req.body;
+        if (!recipientId || senderId === recipientId) {
+            return res.status(400).send({ error: 'Invalid request.' });
+        }
+        
+        // Remove connection request
+        const deleteRequestQuery = `
+            DELETE FROM connection_requests 
+            WHERE sender_id = $1 AND recipient_id = $2
+        `;
+        await client.query(deleteRequestQuery, [senderId, recipientId]);
+        
+        res.status(200).send({ message: 'Request rejected.' });
+    } catch (error) {
+        console.error('Error rejecting request:', error);
+        res.status(500).send({ error: 'Failed to reject request.' });
     }
 });
 
@@ -919,7 +970,10 @@ app.get('/api/polls', async (req, res) => {
                 ) as options,
                 COALESCE(
                     json_agg(
-                        DISTINCT pv.user_id
+                        DISTINCT jsonb_build_object(
+                            'userId', pv.user_id,
+                            'optionId', pv.option_id
+                        )
                     ) FILTER (WHERE pv.user_id IS NOT NULL), 
                     '[]'::json
                 ) as "userVotes"
@@ -1121,7 +1175,10 @@ app.get('/api/feed', async (req, res) => {
                     ) as options,
                     COALESCE(
                         json_agg(
-                            DISTINCT pv.user_id
+                            DISTINCT jsonb_build_object(
+                                'userId', pv.user_id,
+                                'optionId', pv.option_id
+                            )
                         ) FILTER (WHERE pv.user_id IS NOT NULL), 
                         '[]'::json
                     ) as "userVotes"
