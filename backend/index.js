@@ -34,22 +34,34 @@ const PORT = process.env.PORT;  // ✅ FIX: Use Azure PORT
 
 const corsOptions = {
     origin: function(origin, callback) {
-        // Allow requests from https://www.edulink.social or no origin (like curl, mobile apps)
-        if (!origin || origin === "https://www.edulink.social") {
+        console.log('CORS request from origin:', origin);
+        // Allow requests from production domain, localhost for dev, or no origin (mobile apps)
+        const allowedOrigins = [
+            "https://www.edulink.social",
+            "http://localhost:5173", // Vite dev server
+            "http://localhost:3000"  // Local testing
+        ];
+        
+        if (!origin || allowedOrigins.includes(origin)) {
             callback(null, true);
         } else {
+            console.log('CORS blocked origin:', origin);
             callback(new Error('Not allowed by CORS'));
         }
     },
-    methods: ["GET", "POST", "PUT", "DELETE"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-    credentials: true
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "Origin", "X-Requested-With", "Accept"],
+    credentials: true,
+    optionsSuccessStatus: 200 // For legacy browser support
 };
 
+// Apply CORS middleware first
 app.use(cors(corsOptions));
-app.options('*', cors(corsOptions)); // Handle preflight for all routes
 app.use(express.json());
 
+// Environment detection
+const isDevelopment = process.env.NODE_ENV === 'development';
+const isAzure = !!process.env.WEBSITE_SITE_NAME; // Azure App Service sets this
 
 // --- Azure Storage Setup ---
 const accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
