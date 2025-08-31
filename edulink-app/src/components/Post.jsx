@@ -1,6 +1,7 @@
 import React from 'react';
 import { doc, getDoc } from 'firebase/firestore';
-import { db, auth } from '../App';
+import { auth } from '../App';
+import { apiCall } from '../config/api';
 
 // Helper function to format the timestamp
 function formatTimestamp(timestamp) {
@@ -72,7 +73,7 @@ export default function Post({ post, onPostUpdate, onPostDelete, navigateToProfi
                 : [...likes, currentUser.uid]
         });
         try {
-            await fetch(`https://edulink-g0gqgxhhezfjbzg4.southindia-01.azurewebsites.net/api/posts/${post.id}/like`, {
+            await apiCall(`/api/posts/${post.id}/like`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',
@@ -89,7 +90,7 @@ export default function Post({ post, onPostUpdate, onPostDelete, navigateToProfi
         const textToSubmit = commentText;
         setCommentText('');
         try {
-            const response = await fetch(`https://edulink-g0gqgxhhezfjbzg4.southindia-01.azurewebsites.net/api/posts/${post.id}/comment`, {
+            const response = await apiCall(`/api/posts/${post.id}/comment`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',
@@ -124,7 +125,7 @@ export default function Post({ post, onPostUpdate, onPostDelete, navigateToProfi
             return;
         }
         try {
-            const response = await fetch(`https://edulink-g0gqgxhhezfjbzg4.southindia-01.azurewebsites.net/api/posts/${post.id}`, {
+            const response = await apiCall(`/api/posts/${post.id}`, {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',

@@ -1,5 +1,6 @@
 import React from 'react';
 import { auth } from '../App';
+import { apiCall } from '../config/api';
 
 export default function CreatePost({ onPostCreated }) {
     const [description, setDescription] = React.useState('');
@@ -42,9 +43,8 @@ export default function CreatePost({ onPostCreated }) {
 
             if (imageFiles.length > 0) {
                 const uploadPromises = imageFiles.map(async (file) => {
-                    const urlResponse = await fetch('https://edulink-g0gqgxhhezfjbzg4.southindia-01.azurewebsites.net/api/generate-post-upload-url', {
+                    const urlResponse = await apiCall('/api/generate-post-upload-url', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
                         credentials: 'include',
                         body: JSON.stringify({ fileName: file.name, fileType: file.type })
                     });
@@ -70,9 +70,8 @@ export default function CreatePost({ onPostCreated }) {
                 imageUrls: uploadedImageUrls
             };
 
-            const postResponse = await fetch('https://edulink-g0gqgxhhezfjbzg4.southindia-01.azurewebsites.net/api/posts', {
+            const postResponse = await apiCall('/api/posts', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',
                 body: JSON.stringify(postData)
             });
