@@ -31,11 +31,19 @@ client.connect()
 // --- Express Setup ---
 const app = express();
 const PORT = process.env.PORT;  // ✅ FIX: Use Azure PORT
+
 const corsOptions = {
-  origin: "https://www.edulink.social",
-  methods: ["GET", "POST", "PUT", "DELETE"],
-  allowedHeaders: ["Content-Type", "Authorization"],
-  credentials: true
+    origin: function(origin, callback) {
+        // Allow requests from https://www.edulink.social or no origin (like curl, mobile apps)
+        if (!origin || origin === "https://www.edulink.social") {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
+    methods: ["GET", "POST", "PUT", "DELETE"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: true
 };
 
 app.use(cors(corsOptions));
