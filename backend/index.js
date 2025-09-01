@@ -1,4 +1,3 @@
-// 1. Import Packages & Setup
 const express = require('express');
 const cors = require('cors');
 require('dotenv').config(); 
@@ -6,26 +5,21 @@ const { Client, Pool } = require('pg');
 const { BlobServiceClient, StorageSharedKeyCredential, BlobSASPermissions, generateBlobSASQueryParameters } = require('@azure/storage-blob');
 const admin = require('firebase-admin');
 
-// --- Initialize Firebase Admin (for authentication only) ---
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-
 admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
 
-// --- PostgreSQL Database Setup with Pool ---
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: {
     rejectUnauthorized: false
   },
-  max: 20, // maximum number of clients in the pool
-  idleTimeoutMillis: 30000, // close idle clients after 30 seconds
-  connectionTimeoutMillis: 2000, // return an error after 2 seconds if connection could not be established
+  max: 20,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 2000,
 });
 
-// Legacy client for backward compatibility (we'll migrate queries to pool)
 const client = pool;
 
-// Test database connection
 pool.connect()
   .then((client) => {
     console.log('Connected to Neon PostgreSQL database');
@@ -35,48 +29,39 @@ pool.connect()
     console.error('Error connecting to PostgreSQL:', err);
   });
 
-// Handle pool errors
 pool.on('error', (err) => {
   console.error('Unexpected error on idle client', err);
 });
 
-
-// --- Express Setup ---
 const app = express();
-const PORT = process.env.PORT;  // ✅ FIX: Use Azure PORT
+const PORT = process.env.PORT;
 
 const corsOptions = {
     origin: function(origin, callback) {
-        console.log('CORS request from origin:', origin);
-        // Allow requests from production domain, localhost for dev, or no origin (mobile apps)
         const allowedOrigins = [
             "https://www.edulink.social",
-            "http://localhost:5173", // Vite dev server
-            "http://localhost:3000"  // Local testing
+            "http://localhost:5173",
+            "http://localhost:3000"
         ];
         
         if (!origin || allowedOrigins.includes(origin)) {
             callback(null, true);
         } else {
-            console.log('CORS blocked origin:', origin);
             callback(new Error('Not allowed by CORS'));
         }
     },
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "Origin", "X-Requested-With", "Accept"],
     credentials: true,
-    optionsSuccessStatus: 200 // For legacy browser support
+    optionsSuccessStatus: 200
 };
 
-// Apply CORS middleware first
 app.use(cors(corsOptions));
 app.use(express.json());
 
-// Environment detection
 const isDevelopment = process.env.NODE_ENV === 'development';
-const isAzure = !!process.env.WEBSITE_SITE_NAME; // Azure App Service sets this
+const isAzure = !!process.env.WEBSITE_SITE_NAME;
 
-// --- Azure Storage Setup ---
 const accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
 const accountKey = process.env.AZURE_STORAGE_ACCOUNT_KEY;
 if (!accountName || !accountKey) { 
@@ -85,12 +70,8 @@ if (!accountName || !accountKey) {
 }
 const sharedKeyCredential = new StorageSharedKeyCredential(accountName, accountKey);
 
-// 2. --- ALL API ROUTES ---
-
-// Health Check
 app.get('/', (req, res) => res.send('EduLink Backend is running! v2.0 - DB Compatible'));
 
-// PROFILE PICTURE UPLOAD URL
 app.post('/api/generate-upload-url', (req, res) => {
     try {
         const { fileName } = req.body;
@@ -99,9 +80,9 @@ app.post('/api/generate-upload-url', (req, res) => {
         const blobName = `${Date.now()}-${fileName}`;
         const sasToken = generateBlobSASQueryParameters({
             containerName, blobName,
-            permissions: BlobSASPermissions.parse("w"), // Write permission
+            permissions: BlobSASPermissions.parse("w"),
             startsOn: new Date(),
-            expiresOn: new Date(new Date().valueOf() + 3600 * 1000) // 1 hour expiry
+            expiresOn: new Date(new Date().valueOf() + 3600 * 1000)
         }, sharedKeyCredential).toString();
         const uploadUrl = `https://${accountName}.blob.core.windows.net/${containerName}/${blobName}?${sasToken}`;
         res.status(200).send({ uploadUrl, blobName });
@@ -110,7 +91,6 @@ app.post('/api/generate-upload-url', (req, res) => {
     }
 });
 
-// POST IMAGE UPLOAD URL
 app.post('/api/generate-post-upload-url', (req, res) => {
     try {
         const { fileName } = req.body;
@@ -130,34 +110,25 @@ app.post('/api/generate-post-upload-url', (req, res) => {
     }
 });
 
-// POSTS ROUTES
 app.post('/api/posts', async (req, res) => {
     try {
-        console.log('DEBUG: Creating post with updated query (no updated_at)');
         const { userId, description, imageUrls } = req.body;
         if (!userId || !description) return res.status(400).send({ error: 'userId and description are required.' });
         
-        // Check if user exists, create if not
         const checkUserQuery = `SELECT user_id FROM users WHERE user_id = $1`;
         const userResult = await client.query(checkUserQuery, [userId]);
         
         if (userResult.rows.length === 0) {
-            console.log('DEBUG: User not found, creating user:', userId);
-            // Create user with basic info (this should ideally come from frontend)
             const createUserQuery = `
                 INSERT INTO users (user_id, username, email, display_name, display_name_lowercase, created_at) 
                 VALUES ($1, $2, $3, $4, $5, NOW())
             `;
-            // Use userId as fallback values (frontend should call proper user creation endpoint)
             const tempUsername = `user_${userId.slice(-8)}`;
             const tempEmail = `${userId}@temp.com`;
             const tempDisplayName = `User ${userId.slice(-8)}`;
-            console.log('DEBUG: Creating temp user with:', { tempUsername, tempEmail, tempDisplayName });
             await client.query(createUserQuery, [userId, tempUsername, tempEmail, tempDisplayName, tempDisplayName.toLowerCase()]);
-            console.log('DEBUG: Created temporary user profile');
         }
         
-        // Insert post into PostgreSQL
         const insertPostQuery = `
             INSERT INTO posts (user_id, description) 
             VALUES ($1, $2) 
@@ -166,7 +137,6 @@ app.post('/api/posts', async (req, res) => {
         const postResult = await client.query(insertPostQuery, [userId, description]);
         const postId = postResult.rows[0].post_id;
         
-        // Insert images if provided
         if (imageUrls && imageUrls.length > 0) {
             const insertImageQuery = `
                 INSERT INTO post_images (post_id, image_url) 
@@ -186,7 +156,6 @@ app.post('/api/posts', async (req, res) => {
 
 app.get('/api/posts', async (req, res) => {
     try {
-        console.log('DEBUG: Fetching posts with updated query (no pi.created_at)');
         const postsQuery = `
             SELECT 
                 p.post_id as id,
@@ -249,7 +218,6 @@ app.delete('/api/posts/:postId', async (req, res) => {
         const { userId } = req.body;
         if (!userId) return res.status(400).send({ error: 'User ID is required.' });
         
-        // Check if post exists and belongs to user
         const checkPostQuery = `SELECT user_id FROM posts WHERE post_id = $1`;
         const checkResult = await client.query(checkPostQuery, [postId]);
         
@@ -261,7 +229,6 @@ app.delete('/api/posts/:postId', async (req, res) => {
             return res.status(403).send({ error: 'Forbidden' });
         }
         
-        // Delete post (cascade will handle related records)
         const deletePostQuery = `DELETE FROM posts WHERE post_id = $1`;
         await client.query(deletePostQuery, [postId]);
         
@@ -278,23 +245,19 @@ app.post('/api/posts/:postId/like', async (req, res) => {
         const { userId } = req.body;
         if (!userId) return res.status(400).send({ error: 'userId is required.' });
         
-        // Check if post exists
         const checkPostQuery = `SELECT post_id FROM posts WHERE post_id = $1`;
         const postResult = await client.query(checkPostQuery, [postId]);
         if (postResult.rows.length === 0) {
             return res.status(404).send({ error: 'Post not found.' });
         }
         
-        // Check if user already liked the post
         const checkLikeQuery = `SELECT 1 FROM likes WHERE post_id = $1 AND user_id = $2`;
         const likeResult = await client.query(checkLikeQuery, [postId, userId]);
         
         if (likeResult.rows.length > 0) {
-            // Unlike the post
             const deleteLikeQuery = `DELETE FROM likes WHERE post_id = $1 AND user_id = $2`;
             await client.query(deleteLikeQuery, [postId, userId]);
         } else {
-            // Like the post
             const insertLikeQuery = `INSERT INTO likes (post_id, user_id) VALUES ($1, $2)`;
             await client.query(insertLikeQuery, [postId, userId]);
         }
@@ -312,21 +275,18 @@ app.post('/api/posts/:postId/comment', async (req, res) => {
         const { userId, text } = req.body;
         if (!userId || !text) return res.status(400).send({ error: 'userId and text are required.' });
         
-        // Check if post exists
         const checkPostQuery = `SELECT post_id FROM posts WHERE post_id = $1`;
         const postResult = await client.query(checkPostQuery, [postId]);
         if (postResult.rows.length === 0) {
             return res.status(404).send({ error: 'Post not found.' });
         }
         
-        // Add comment
         const insertCommentQuery = `
             INSERT INTO comments (post_id, user_id, comment_text) 
             VALUES ($1, $2, $3)
         `;
         await client.query(insertCommentQuery, [postId, userId, text]);
         
-        // Get updated post with all data
         const updatedPostQuery = `
             SELECT 
                 p.post_id as id,
@@ -388,7 +348,6 @@ app.delete('/api/comments/:commentId', async (req, res) => {
         const { userId } = req.body;
         if (!userId) return res.status(400).send({ error: 'User ID is required.' });
         
-        // Check if comment exists and belongs to user
         const checkCommentQuery = `SELECT user_id, post_id FROM comments WHERE comment_id = $1`;
         const checkResult = await client.query(checkCommentQuery, [commentId]);
         
@@ -400,7 +359,6 @@ app.delete('/api/comments/:commentId', async (req, res) => {
             return res.status(403).send({ error: 'Forbidden' });
         }
         
-        // Delete comment
         const deleteCommentQuery = `DELETE FROM comments WHERE comment_id = $1`;
         await client.query(deleteCommentQuery, [commentId]);
         
@@ -411,7 +369,6 @@ app.delete('/api/comments/:commentId', async (req, res) => {
     }
 });
 
-// USER & CONNECTION ROUTES
 app.get('/api/users/search', async (req, res) => {
     try {
         const { query } = req.query;
@@ -456,7 +413,6 @@ app.post('/api/users/:userId/follow', async (req, res) => {
             return res.status(400).send({ error: 'Invalid request.' });
         }
         
-        // Check if users exist
         const checkUsersQuery = `
             SELECT user_id FROM users WHERE user_id IN ($1, $2)
         `;
@@ -465,7 +421,6 @@ app.post('/api/users/:userId/follow', async (req, res) => {
             return res.status(404).send({ error: 'One or both users not found.' });
         }
         
-        // Insert connection (ignore if already exists)
         const insertConnectionQuery = `
             INSERT INTO user_connections (follower_id, following_id, created_at) 
             VALUES ($1, $2, NOW())
@@ -486,7 +441,6 @@ app.post('/api/users/:userId/unfollow', async (req, res) => {
         const { currentUserId } = req.body;
         if (!currentUserId) return res.status(400).send({ error: 'Current user ID is required.' });
         
-        // Remove connection
         const deleteConnectionQuery = `
             DELETE FROM user_connections 
             WHERE follower_id = $1 AND following_id = $2
@@ -505,25 +459,17 @@ app.post('/api/users/:userId/request-connect', async (req, res) => {
         const { userId: recipientId } = req.params;
         const { currentUserId: senderId } = req.body;
         
-        console.log('Connection request:', { senderId, recipientId });
-        
         if (!senderId || recipientId === senderId) {
-            console.log('Invalid request: same user or missing sender');
             return res.status(400).json({ error: 'Invalid request.' });
         }
         
-        // Check if users exist
         const checkUsersQuery = `SELECT user_id, display_name FROM users WHERE user_id IN ($1, $2)`;
         const usersResult = await client.query(checkUsersQuery, [senderId, recipientId]);
         
-        console.log('Users found:', usersResult.rows.length);
-        
         if (usersResult.rows.length < 2) {
-            console.log('One or both users not found');
             return res.status(404).json({ error: 'One or both users not found.' });
         }
         
-        // Check if connection request already exists
         const existingRequestQuery = `
             SELECT id FROM connection_requests 
             WHERE sender_id = $1 AND recipient_id = $2
@@ -531,11 +477,9 @@ app.post('/api/users/:userId/request-connect', async (req, res) => {
         const existingRequest = await client.query(existingRequestQuery, [senderId, recipientId]);
         
         if (existingRequest.rows.length > 0) {
-            console.log('Connection request already exists');
             return res.status(400).json({ error: 'Connection request already exists.' });
         }
         
-        // Check if they're already connected
         const connectionQuery = `
             SELECT connection_id FROM user_connections 
             WHERE follower_id = $1 AND following_id = $2
@@ -543,30 +487,22 @@ app.post('/api/users/:userId/request-connect', async (req, res) => {
         const existingConnection = await client.query(connectionQuery, [senderId, recipientId]);
         
         if (existingConnection.rows.length > 0) {
-            console.log('Users are already connected');
             return res.status(400).json({ error: 'Users are already connected.' });
         }
         
-        // Begin transaction
         await client.query('BEGIN');
         
         try {
-            // Insert connection request
             const insertRequestQuery = `
                 INSERT INTO connection_requests (sender_id, recipient_id, created_at) 
                 VALUES ($1, $2, NOW())
                 RETURNING id
             `;
             const requestResult = await client.query(insertRequestQuery, [senderId, recipientId]);
-            console.log('Connection request created:', requestResult.rows[0]);
             
-            // Get sender's display name for notification
             const senderInfo = usersResult.rows.find(user => user.user_id === senderId);
             const senderName = senderInfo?.display_name || 'Someone';
             
-            console.log('Creating notification for recipient:', recipientId, 'from:', senderName);
-            
-            // Create notification for recipient
             const notificationQuery = `
                 INSERT INTO notifications (user_id, type, title, message, related_user_id, is_read, created_at)
                 VALUES ($1, $2, $3, $4, $5, $6, NOW())
@@ -581,11 +517,7 @@ app.post('/api/users/:userId/request-connect', async (req, res) => {
                 false
             ]);
             
-            console.log('Notification created:', notificationResult.rows[0]);
-            
-            // Commit transaction
             await client.query('COMMIT');
-            console.log('Transaction committed successfully');
             
             res.status(200).json({ 
                 message: 'Connection request sent successfully',
@@ -595,7 +527,6 @@ app.post('/api/users/:userId/request-connect', async (req, res) => {
             
         } catch (innerError) {
             await client.query('ROLLBACK');
-            console.error('Transaction error:', innerError);
             throw innerError;
         }
         
@@ -610,55 +541,41 @@ app.post('/api/users/:userId/accept-connect', async (req, res) => {
         const { userId: senderId } = req.params;
         const { currentUserId: recipientId } = req.body;
         
-        console.log('Accept connect request:', { senderId, recipientId });
-        
         if (!recipientId || senderId === recipientId) {
-            console.log('Invalid request: missing recipient or same user');
             return res.status(400).json({ error: 'Invalid request.' });
         }
         
-        // Check if connection request exists (sender sent request to recipient)
         const checkRequestQuery = `
             SELECT id FROM connection_requests 
             WHERE sender_id = $1 AND recipient_id = $2
         `;
         const requestResult = await client.query(checkRequestQuery, [senderId, recipientId]);
         
-        console.log('Connection request found:', requestResult.rows.length > 0);
-        
         if (requestResult.rows.length === 0) {
-            console.log('Connection request not found for:', { senderId, recipientId });
             return res.status(404).json({ error: 'Connection request not found.' });
         }
         
-        // Begin transaction
         await client.query('BEGIN');
         
         try {
-            // Remove connection request
             const deleteRequestQuery = `
                 DELETE FROM connection_requests 
                 WHERE sender_id = $1 AND recipient_id = $2
             `;
             await client.query(deleteRequestQuery, [senderId, recipientId]);
-            console.log('Connection request deleted');
             
-            // Add mutual connections
             const insertConnectionQuery = `
                 INSERT INTO user_connections (follower_id, following_id, created_at) 
                 VALUES ($1, $2, NOW()), ($2, $1, NOW())
                 ON CONFLICT (follower_id, following_id) DO NOTHING
             `;
             await client.query(insertConnectionQuery, [recipientId, senderId]);
-            console.log('Mutual connections created');
             
-            // Get user names for notification
             const getUsersQuery = `SELECT user_id, display_name FROM users WHERE user_id IN ($1, $2)`;
             const usersResult = await client.query(getUsersQuery, [senderId, recipientId]);
             const recipientInfo = usersResult.rows.find(user => user.user_id === recipientId);
             const recipientName = recipientInfo?.display_name || 'Someone';
             
-            // Create notification for sender (request was accepted)
             const notificationQuery = `
                 INSERT INTO notifications (user_id, type, title, message, related_user_id, is_read, created_at)
                 VALUES ($1, $2, $3, $4, $5, $6, NOW())
@@ -671,15 +588,12 @@ app.post('/api/users/:userId/accept-connect', async (req, res) => {
                 recipientId,
                 false
             ]);
-            console.log('Acceptance notification created');
             
             await client.query('COMMIT');
-            console.log('Transaction committed successfully');
             
             res.status(200).json({ message: 'Connection accepted successfully.' });
         } catch (error) {
             await client.query('ROLLBACK');
-            console.error('Transaction error in accept-connect:', error);
             throw error;
         }
     } catch (error) {
@@ -694,7 +608,6 @@ app.post('/api/users/:userId/cancel-request', async (req, res) => {
         const { currentUserId: senderId } = req.body;
         if (!senderId) return res.status(400).send({ error: 'Current user ID is required.' });
         
-        // Remove connection request
         const deleteRequestQuery = `
             DELETE FROM connection_requests 
             WHERE sender_id = $1 AND recipient_id = $2
@@ -716,7 +629,6 @@ app.post('/api/users/:userId/reject-request', async (req, res) => {
             return res.status(400).send({ error: 'Invalid request.' });
         }
         
-        // Remove connection request
         const deleteRequestQuery = `
             DELETE FROM connection_requests 
             WHERE sender_id = $1 AND recipient_id = $2
@@ -737,7 +649,6 @@ app.post('/api/users/notifications', async (req, res) => {
             return res.status(200).send([]);
         }
         
-        // Create placeholders for the IN clause
         const placeholders = userIds.map((_, index) => `$${index + 1}`).join(',');
         
         const getUsersQuery = `
@@ -759,7 +670,6 @@ app.post('/api/users/notifications', async (req, res) => {
     }
 });
 
-// Get user notifications
 app.get('/api/notifications/:userId', async (req, res) => {
     try {
         const { userId } = req.params;
@@ -773,6 +683,7 @@ app.get('/api/notifications/:userId', async (req, res) => {
                 n.message,
                 n.is_read,
                 n.created_at,
+                n.related_user_id,
                 u.display_name as "fromUserName",
                 u.username as "fromUserUsername",
                 u.profile_picture_url as "fromUserProfilePicture"
@@ -791,7 +702,6 @@ app.get('/api/notifications/:userId', async (req, res) => {
     }
 });
 
-// Mark notification as read
 app.patch('/api/notifications/:notificationId/read', async (req, res) => {
     try {
         const { notificationId } = req.params;
@@ -817,7 +727,6 @@ app.patch('/api/notifications/:notificationId/read', async (req, res) => {
     }
 });
 
-// USER PROFILE ROUTES
 app.get('/api/users/:userId', async (req, res) => {
     try {
         const { userId } = req.params;
@@ -845,28 +754,24 @@ app.get('/api/users/:userId', async (req, res) => {
         
         const user = result.rows[0];
         
-        // Get followers (users who follow this user)
         const followersQuery = `
             SELECT follower_id FROM user_connections WHERE following_id = $1
         `;
         const followersResult = await client.query(followersQuery, [userId]);
         user.followers = followersResult.rows.map(row => row.follower_id);
         
-        // Get following (users this user follows)
         const followingQuery = `
             SELECT following_id FROM user_connections WHERE follower_id = $1
         `;
         const followingResult = await client.query(followingQuery, [userId]);
         user.following = followingResult.rows.map(row => row.following_id);
         
-        // Get connection requests sent by this user
         const requestsSentQuery = `
             SELECT recipient_id FROM connection_requests WHERE sender_id = $1
         `;
         const requestsSentResult = await client.query(requestsSentQuery, [userId]);
         user.connectionRequestsSent = requestsSentResult.rows.map(row => row.recipient_id);
         
-        // Get connection requests received by this user
         const requestsReceivedQuery = `
             SELECT sender_id FROM connection_requests WHERE recipient_id = $1
         `;
@@ -884,18 +789,6 @@ app.put('/api/users/:userId', async (req, res) => {
     try {
         const { userId } = req.params;
         const { username, displayName, bio, headline, location, skills, socialLinks, profilePictureUrl } = req.body;
-        
-        console.log('Backend: PUT /api/users/:userId received data:', {
-            userId,
-            username,
-            displayName,
-            bio,
-            headline,
-            location,
-            skills,
-            socialLinks,
-            profilePictureUrl
-        });
         
         const updateUserQuery = `
             UPDATE users 
@@ -947,13 +840,10 @@ app.put('/api/users/:userId', async (req, res) => {
     }
 });
 
-// Create user endpoint for when users sign up
 app.post('/api/users', async (req, res) => {
     try {
-        console.log('DEBUG: Creating user with data:', req.body);
         const { userId, username, email, displayName, profilePictureUrl, bio } = req.body;
         if (!userId || !username || !email || !displayName) {
-            console.log('DEBUG: Missing required fields for user creation');
             return res.status(400).send({ error: 'userId, username, email, and displayName are required.' });
         }
         
@@ -971,7 +861,6 @@ app.post('/api/users', async (req, res) => {
         `;
         
         const result = await client.query(insertUserQuery, [userId, username, email, displayName, displayName.toLowerCase(), profilePictureUrl, bio]);
-        console.log('DEBUG: User created successfully:', result.rows[0]);
         res.status(201).send(result.rows[0]);
     } catch (error) {
         console.error('Error creating user:', error);
@@ -983,11 +872,10 @@ app.post('/api/users', async (req, res) => {
     }
 });
 
-// Get user's connections/followers/following
 app.get('/api/users/:userId/connections', async (req, res) => {
     try {
         const { userId } = req.params;
-        const { type } = req.query; // 'followers', 'following', or 'requests'
+        const { type } = req.query;
         
         let query;
         let params = [userId];
@@ -1043,7 +931,6 @@ app.get('/api/users/:userId/connections', async (req, res) => {
     }
 });
 
-// POLLS ROUTES
 app.post('/api/polls', async (req, res) => {
     try {
         const { userId, question, description, options, allowMultipleVotes, expiresAt } = req.body;
@@ -1054,7 +941,6 @@ app.post('/api/polls', async (req, res) => {
             return res.status(400).send({ error: 'Maximum 20 options allowed.' });
         }
         
-        // Check if user exists, create if not
         const checkUserQuery = `SELECT user_id FROM users WHERE user_id = $1`;
         const userResult = await client.query(checkUserQuery, [userId]);
         
@@ -1069,11 +955,9 @@ app.post('/api/polls', async (req, res) => {
             await client.query(createUserQuery, [userId, tempUsername, tempEmail, tempDisplayName, tempDisplayName.toLowerCase()]);
         }
         
-        // Begin transaction
         await client.query('BEGIN');
         
         try {
-            // Insert poll
             const insertPollQuery = `
                 INSERT INTO polls (user_id, question, description, allow_multiple_votes, expires_at) 
                 VALUES ($1, $2, $3, $4, $5) 
@@ -1088,7 +972,6 @@ app.post('/api/polls', async (req, res) => {
             ]);
             const pollId = pollResult.rows[0].poll_id;
             
-            // Insert poll options
             const insertOptionQuery = `
                 INSERT INTO poll_options (poll_id, option_text, option_order) 
                 VALUES ($1, $2, $3)
@@ -1185,7 +1068,6 @@ app.post('/api/polls/:pollId/vote', async (req, res) => {
             return res.status(400).send({ error: 'userId and optionIds array are required.' });
         }
         
-        // Get poll details
         const pollQuery = `SELECT allow_multiple_votes FROM polls WHERE poll_id = $1`;
         const pollResult = await client.query(pollQuery, [pollId]);
         if (pollResult.rows.length === 0) {
@@ -1194,20 +1076,16 @@ app.post('/api/polls/:pollId/vote', async (req, res) => {
         
         const allowMultipleVotes = pollResult.rows[0].allow_multiple_votes;
         
-        // Validate vote count
         if (!allowMultipleVotes && optionIds.length > 1) {
             return res.status(400).send({ error: 'This poll only allows one vote per user.' });
         }
         
-        // Begin transaction
         await client.query('BEGIN');
         
         try {
-            // Remove existing votes for this user on this poll
             const deleteVotesQuery = `DELETE FROM poll_votes WHERE poll_id = $1 AND user_id = $2`;
             await client.query(deleteVotesQuery, [pollId, userId]);
             
-            // Add new votes
             const insertVoteQuery = `
                 INSERT INTO poll_votes (poll_id, option_id, user_id) 
                 VALUES ($1, $2, $3)
@@ -1234,7 +1112,6 @@ app.delete('/api/polls/:pollId', async (req, res) => {
         const { userId } = req.body;
         if (!userId) return res.status(400).send({ error: 'User ID is required.' });
         
-        // Check if poll exists and belongs to user
         const checkPollQuery = `SELECT user_id FROM polls WHERE poll_id = $1`;
         const checkResult = await client.query(checkPollQuery, [pollId]);
         
@@ -1246,7 +1123,6 @@ app.delete('/api/polls/:pollId', async (req, res) => {
             return res.status(403).send({ error: 'Forbidden' });
         }
         
-        // Delete poll (cascade will handle related records)
         const deletePollQuery = `DELETE FROM polls WHERE poll_id = $1`;
         await client.query(deletePollQuery, [pollId]);
         
@@ -1257,15 +1133,13 @@ app.delete('/api/polls/:pollId', async (req, res) => {
     }
 });
 
-// COMBINED FEED (POSTS + POLLS)
 app.get('/api/feed', async (req, res) => {
     try {
-        const { type = 'all' } = req.query; // 'all', 'posts', 'polls'
+        const { type = 'all' } = req.query;
         
         let feedItems = [];
         
         if (type === 'all' || type === 'posts') {
-            // Fetch posts
             const postsQuery = `
                 SELECT 
                     'post' as type,
@@ -1317,7 +1191,6 @@ app.get('/api/feed', async (req, res) => {
         }
         
         if (type === 'all' || type === 'polls') {
-            // Fetch polls
             const pollsQuery = `
                 SELECT 
                     'poll' as type,
@@ -1378,7 +1251,6 @@ app.get('/api/feed', async (req, res) => {
             feedItems = feedItems.concat(polls);
         }
         
-        // Sort by creation time (newest first)
         feedItems.sort((a, b) => b.createdAt - a.createdAt);
         
         res.status(200).send(feedItems);
@@ -1388,10 +1260,8 @@ app.get('/api/feed', async (req, res) => {
     }
 });
 
-// PLACEHOLDER CHAT/MESSAGING ENDPOINTS (to be implemented later)
 app.get('/api/users/:userId/chats', async (req, res) => {
     try {
-        // For now, return empty array - implement proper chat functionality later
         res.status(200).send([]);
     } catch (error) {
         console.error('Error fetching chats:', error);
@@ -1401,7 +1271,6 @@ app.get('/api/users/:userId/chats', async (req, res) => {
 
 app.get('/api/chats/:chatId/messages', async (req, res) => {
     try {
-        // For now, return empty array - implement proper messaging functionality later
         res.status(200).send([]);
     } catch (error) {
         console.error('Error fetching messages:', error);
@@ -1409,8 +1278,6 @@ app.get('/api/chats/:chatId/messages', async (req, res) => {
     }
 });
 
-
-// 3. Start Server
 app.listen(PORT, () => {
   console.log(`🚀 EduLink Backend Server Started!`);
   console.log(`📍 Environment: ${isDevelopment ? 'Development' : isAzure ? 'Azure Cloud' : 'Production'}`);

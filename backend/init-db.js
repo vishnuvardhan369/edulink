@@ -15,10 +15,8 @@ async function initializeDatabase() {
         await client.connect();
         console.log('Connected to Neon PostgreSQL database');
 
-        // Read the SQL file
-        const sqlFile = fs.readFileSync(path.join(__dirname, 'init-db.sql'), 'utf8');
+        const sqlFile = fs.readFileSync(path.join(__dirname, 'database-schema.sql'), 'utf8');
         
-        // Execute the SQL
         await client.query(sqlFile);
         console.log('Database tables and indexes created successfully!');
         

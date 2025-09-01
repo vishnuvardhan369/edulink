@@ -15,13 +15,11 @@ export default function CreatePost({ onPostCreated }) {
         const newFiles = Array.from(e.target.files);
         if (newFiles.length === 0) return;
 
-        // **FIX**: Enforce 5-image limit
         if (imageFiles.length + newFiles.length > 5) {
             alert("You can only upload a maximum of 5 images per post.");
             return;
         }
 
-        // **FIX**: Append new files to the existing list
         setImageFiles(prevFiles => [...prevFiles, ...newFiles]);
     };
     
@@ -137,7 +135,6 @@ export default function CreatePost({ onPostCreated }) {
                     )}
                 </div>
                 
-                {/* Display selected files with modern styling */}
                 {imageFiles.length > 0 && (
                     <div className="mb-3">
                         <div style={{ 
