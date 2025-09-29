@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth.jsx';
 import { useSocket } from '../hooks/useSocket.jsx';
 import { useWebRTC } from '../hooks/useWebRTC.jsx';
+import { apiCall } from '../config/api.js';
 import ChatSidebar from '../components/Chat/ChatSidebar';
 import ChatWindow from '../components/Chat/ChatWindow';
 import CallModal from '../components/Calls/CallModal';
@@ -77,7 +78,7 @@ const ChatPage = ({ conversationId }) => {
 
     const loadConversations = async () => {
         try {
-            const response = await fetch(`http://localhost:3000/api/chats?userId=${user.id}`);
+            const response = await apiCall(`/api/chats?userId=${user.id}`);
             if (response.ok) {
                 const data = await response.json();
                 setConversations(data);
@@ -91,8 +92,8 @@ const ChatPage = ({ conversationId }) => {
 
     const loadMessages = async (conversationId) => {
         try {
-            const response = await fetch(
-                `http://localhost:3000/api/chats/${conversationId}/messages?userId=${user.id}&limit=50`
+            const response = await apiCall(
+                `/api/chats/${conversationId}/messages?userId=${user.id}&limit=50`
             );
             if (response.ok) {
                 const data = await response.json();
@@ -176,7 +177,7 @@ const ChatPage = ({ conversationId }) => {
 
     const markMessagesAsRead = async (conversationId) => {
         try {
-            const response = await fetch(`http://localhost:3000/api/chats/${conversationId}/read`, {
+            const response = await apiCall(`/api/chats/${conversationId}/read`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
@@ -202,7 +203,7 @@ const ChatPage = ({ conversationId }) => {
 
     const createNewConversation = async (participants, type = 'direct', name = null) => {
         try {
-            const response = await fetch('http://localhost:3000/api/chats', {
+            const response = await apiCall('/api/chats', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

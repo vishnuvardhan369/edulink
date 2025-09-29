@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react';
 import './ChatInput.css';
+import { apiCall } from '../../config/api.js';
 
 const ChatInput = ({ onSendMessage, onFocus, onBlur, onChange, disabled }) => {
     const [message, setMessage] = useState('');
@@ -37,7 +38,7 @@ const ChatInput = ({ onSendMessage, onFocus, onBlur, onChange, disabled }) => {
             formData.append('file', file);
             formData.append('messageType', file.type.startsWith('image/') ? 'image' : 'file');
 
-            const response = await fetch('http://localhost:3000/api/upload', {
+            const response = await apiCall('/api/upload', {
                 method: 'POST',
                 body: formData
             });
