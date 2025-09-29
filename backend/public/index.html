@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>EduLink - Education Platform</title>
+    <script>
+      // Define global Node.js compatibility immediately
+      if (typeof global === 'undefined') {
+        var global = globalThis;
+      }
+      if (typeof process === 'undefined') {
+        var process = {
+          env: {},
+          browser: true,
+          version: '',
+          versions: { node: '' },
+          nextTick: function(fn) { setTimeout(fn, 0); },
+          platform: 'browser',
+          cwd: function() { return '/'; },
+          exit: function() {}
+        };
+      }
+    </script>
+    <script type="module" crossorigin src="/assets/index-B42KTMh6.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-gkPWy17F.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

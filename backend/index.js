@@ -53,17 +53,39 @@ pool.on('error', (err) => {
 
 const app = express();
 const server = createServer(app);
+
+// Enhanced Socket.IO configuration for Azure App Services
 const io = new Server(server, {
     cors: {
         origin: process.env.NODE_ENV === 'production' 
-            ? ["https://edulink-g0gqgxhhezfjbzg4.southindia-01.azurewebsites.net"]
-            : ["http://localhost:5173", "http://localhost:3000", "https://www.edulink.social"],
+            ? [
+                "https://edulink-g0gqgxhhezfjbzg4.southindia-01.azurewebsites.net",
+                "https://www.edulink.social",
+                "https://edulink.social"
+              ]
+            : [
+                "http://localhost:5173", 
+                "http://localhost:3000", 
+                "https://www.edulink.social",
+                "https://edulink.social"
+              ],
         methods: ["GET", "POST"],
-        credentials: true
+        credentials: true,
+        allowEIO3: true // Support for older Socket.IO versions
     },
+    // Azure-optimized settings
     pingTimeout: 60000,
     pingInterval: 25000,
-    transports: ['websocket', 'polling']
+    upgradeTimeout: 30000,
+    maxHttpBufferSize: 1e8, // 100 MB
+    transports: ['polling', 'websocket'], // Prefer polling first for Azure
+    allowUpgrades: true,
+    httpCompression: true,
+    // Additional settings for production stability
+    ...(process.env.NODE_ENV === 'production' && {
+        cookie: false, // Disable cookies in production
+        serveClient: false // Don't serve Socket.IO client files
+    })
 });
 const PORT = process.env.PORT;
 
@@ -95,6 +117,51 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json());
 
+// Serve static files from React build (for production deployment)
+const path = require('path');
+if (process.env.NODE_ENV === 'production') {
+    // Serve static files from the public directory
+    app.use(express.static(path.join(__dirname, 'public')));
+    
+    // Handle React Router - send all non-API routes to index.html
+    app.get('*', (req, res, next) => {
+        // Skip API routes
+        if (req.path.startsWith('/api') || req.path.startsWith('/auth') || req.path.startsWith('/health')) {
+            return next();
+        }
+        res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    });
+}
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+    res.status(200).json({ 
+        status: 'OK', 
+        timestamp: new Date().toISOString(),
+        environment: process.env.NODE_ENV,
+        port: PORT
+    });
+});
+
+// Database health check
+app.get('/api/health/db', async (req, res) => {
+    try {
+        const result = await client.query('SELECT NOW() as current_time');
+        res.status(200).json({
+            status: 'OK',
+            database: 'Connected',
+            timestamp: result.rows[0].current_time
+        });
+    } catch (error) {
+        console.error('❌ Database health check failed:', error);
+        res.status(500).json({
+            status: 'ERROR',
+            database: 'Disconnected',
+            error: error.message
+        });
+    }
+});
+
 const isDevelopment = process.env.NODE_ENV === 'development';
 const isAzure = !!process.env.WEBSITE_SITE_NAME;
 
@@ -112,9 +179,25 @@ app.get('/', (req, res) => res.send('EduLink Backend is running! v2.0 - DB Compa
 const activeUsers = new Map(); // userId -> { socketId, status, lastSeen }
 const activeRooms = new Map(); // conversationId -> Set of socketIds
 
-// Socket.IO Connection Handler
+// Socket.IO Connection Handler with enhanced logging
 io.on('connection', (socket) => {
-    console.log('🔗 User connected:', socket.id);
+    console.log('🔗 New Socket.IO connection:', {
+        socketId: socket.id,
+        transport: socket.conn.transport.name,
+        remoteAddress: socket.handshake.address,
+        userAgent: socket.handshake.headers['user-agent'],
+        origin: socket.handshake.headers.origin,
+        referer: socket.handshake.headers.referer
+    });
+
+    // Log transport upgrades
+    socket.conn.on('upgrade', (transport) => {
+        console.log('⬆️ Socket transport upgraded:', socket.id, 'to', transport.name);
+    });
+
+    socket.on('disconnect', (reason) => {
+        console.log('❌ Socket disconnected:', socket.id, 'reason:', reason);
+    });
 
     // Handle user authentication and join
     socket.on('user:join', async (userIdOrData) => {
@@ -589,8 +672,14 @@ io.on('connection', (socket) => {
 app.get('/api/chats', async (req, res) => {
     try {
         const { userId } = req.query;
-        if (!userId) return res.status(400).send({ error: 'User ID is required' });
+        console.log(`🔍 Fetching chats for userId: ${userId}`);
+        
+        if (!userId) {
+            console.log('❌ Missing userId in request');
+            return res.status(400).send({ error: 'User ID is required' });
+        }
 
+        console.log('📝 Executing conversations query...');
         const conversationsQuery = `
             SELECT 
                 c.conversation_id,
@@ -645,10 +734,22 @@ app.get('/api/chats', async (req, res) => {
         `;
 
         const result = await client.query(conversationsQuery, [userId]);
+        console.log(`✅ Found ${result.rows.length} conversations for user ${userId}`);
         res.status(200).send(result.rows);
     } catch (error) {
-        console.error('Error fetching conversations:', error);
-        res.status(500).send({ error: 'Failed to fetch conversations' });
+        console.error('❌ Error fetching conversations:', error.message);
+        console.error('📍 Stack trace:', error.stack);
+        
+        // If it's a table-related error, return empty array instead of failing
+        if (error.message.includes('relation') && error.message.includes('does not exist')) {
+            console.log('🔄 Database tables not found, returning empty array');
+            return res.status(200).send([]);
+        }
+        
+        res.status(500).send({ 
+            error: 'Failed to fetch conversations',
+            details: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+        });
     }
 });
 
@@ -1626,6 +1727,7 @@ app.patch('/api/notifications/:notificationId/read', async (req, res) => {
 app.get('/api/users/:userId', async (req, res) => {
     try {
         const { userId } = req.params;
+        console.log(`🔍 Fetching user data for userId: ${userId}`);
         
         const getUserQuery = `
             SELECT 
@@ -1643,7 +1745,9 @@ app.get('/api/users/:userId', async (req, res) => {
             WHERE user_id = $1
         `;
         
+        console.log(`📝 Executing query: ${getUserQuery}`);
         const result = await client.query(getUserQuery, [userId]);
+        console.log(`✅ Query result: ${result.rows.length} rows found`);
         if (result.rows.length === 0) {
             return res.status(404).send({ error: 'User not found.' });
         }
@@ -1676,8 +1780,13 @@ app.get('/api/users/:userId', async (req, res) => {
         
         res.status(200).send(user);
     } catch (error) {
-        console.error('Error fetching user:', error);
-        res.status(500).send({ error: 'Failed to fetch user.' });
+        console.error('❌ Error fetching user:', error.message);
+        console.error('📍 Stack trace:', error.stack);
+        console.error('🔍 Query parameters:', { userId: req.params.userId });
+        res.status(500).send({ 
+            error: 'Failed to fetch user.',
+            details: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+        });
     }
 });
 
@@ -2158,10 +2267,16 @@ app.get('/api/feed', async (req, res) => {
 
 app.get('/api/users/:userId/chats', async (req, res) => {
     try {
-        res.status(200).send([]);
+        console.log(`✅ Found ${conversations.length} conversations for user ${userId}`);
+        res.status(200).send(conversations);
     } catch (error) {
-        console.error('Error fetching chats:', error);
-        res.status(500).send({ error: 'Failed to fetch chats.' });
+        console.error('❌ Error fetching chats:', error.message);
+        console.error('📍 Stack trace:', error.stack);
+        console.error('🔍 Query parameters:', { userId: req.query.userId });
+        res.status(500).send({ 
+            error: 'Failed to fetch chats.',
+            details: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+        });
     }
 });
 

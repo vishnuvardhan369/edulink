@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import io from 'socket.io-client';
+import { SOCKET_URL } from '../config/api.js';
 
 // Singleton socket manager to prevent multiple connections
 let globalSocket = null;
@@ -8,18 +9,33 @@ let connectionCount = 0;
 const createSocket = () => {
     if (!globalSocket) {
         console.log('🔌 Creating new socket connection...');
-        globalSocket = io('http://localhost:3000', {
-            transports: ['websocket', 'polling'],
+        console.log('🌐 Connecting to:', SOCKET_URL);
+        
+        // Enhanced Socket.IO configuration for production
+        globalSocket = io(SOCKET_URL, {
+            transports: ['polling', 'websocket'], // Start with polling for better Azure compatibility
             autoConnect: true,
             reconnection: true,
             reconnectionDelay: 1000,
-            reconnectionAttempts: 5,
-            timeout: 20000,
+            reconnectionDelayMax: 5000,
+            reconnectionAttempts: 10,
+            timeout: 30000,
             forceNew: false,
+            upgrade: true,
+            rememberUpgrade: false, // Don't remember upgrades for Azure
+            // Additional options for production stability
+            pingTimeout: 60000,
+            pingInterval: 25000,
+            // Force specific transport order for Azure
+            ...(SOCKET_URL.includes('azurewebsites.net') && {
+                transports: ['polling'], // Force polling only for Azure initially
+                upgrade: false // Disable WebSocket upgrade for initial connection
+            })
         });
 
         globalSocket.on('connect', () => {
             console.log('✅ Global socket connected:', globalSocket.id);
+            console.log('🚀 Transport:', globalSocket.io.engine.transport.name);
         });
 
         globalSocket.on('disconnect', (reason) => {
@@ -28,6 +44,29 @@ const createSocket = () => {
 
         globalSocket.on('connect_error', (error) => {
             console.error('🚨 Global socket connection error:', error);
+            console.error('🔍 Error details:', {
+                message: error.message,
+                description: error.description,
+                context: error.context,
+                stack: error.stack
+            });
+        });
+
+        globalSocket.on('reconnect', (attemptNumber) => {
+            console.log('🔄 Socket reconnected after', attemptNumber, 'attempts');
+        });
+
+        globalSocket.on('reconnect_error', (error) => {
+            console.error('💥 Reconnection failed:', error);
+        });
+
+        globalSocket.on('reconnect_failed', () => {
+            console.error('💀 Reconnection failed permanently');
+        });
+
+        // Listen for transport changes
+        globalSocket.io.on('upgrade', (transport) => {
+            console.log('⬆️ Upgraded to transport:', transport.name);
         });
     }
     return globalSocket;
