@@ -1,7 +1,10 @@
 import React from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { initializeApp } from 'firebase/app';
 import { getAuth, onAuthStateChanged, signOut } from 'firebase/auth';
 import { apiCall } from './config/api';
+import { AuthProvider } from './hooks/useAuth.jsx';
+import { useSocket } from './hooks/useSocket.jsx';
 import './App.css';
 
 // Import our page components
@@ -11,7 +14,10 @@ import UsernameSelectionPage from './pages/UsernameSelectionPage';
 import HomePage from './pages/HomePage';
 import ProfilePage from './pages/ProfilePage';
 import SearchPage from './pages/SearchPage';
-import NotificationsPage from './pages/NotificationsPage'; // New page
+import NotificationsPage from './pages/NotificationsPage';
+import ChatPage from './pages/ChatPage';
+import ChatListPage from './pages/ChatListPage';
+import CallModal from './components/Calls/CallModal';
 
 // --- Firebase Config ---
 const firebaseConfig = {
@@ -33,6 +39,10 @@ export default function App() {
     const [loading, setLoading] = React.useState(true);
     const [userData, setUserData] = React.useState(null);
     const [currentPage, setCurrentPage] = React.useState({ page: 'home', profileId: null });
+    const [incomingCall, setIncomingCall] = React.useState(null);
+    
+    // App-level socket connection
+    const { socket, isConnected } = useSocket();
 
     const fetchCurrentUserData = async (currentUser) => {
         if (currentUser) {
@@ -62,7 +72,144 @@ export default function App() {
         return () => unsubscribe();
     }, []);
 
+    // Socket connection and call notifications
+    React.useEffect(() => {
+        if (user && socket && isConnected) {
+            console.log('🔌 Setting up app-level socket listeners for user:', user.uid);
+            
+            // Join user's room for notifications
+            socket.emit('user:join', user.uid);
+            
+            // Listen for successful join confirmation
+            socket.on('user:joined', (data) => {
+                console.log('✅ Successfully joined notifications:', data);
+            });
+            
+            // Listen for incoming calls
+            socket.on('call:incoming', (callData) => {
+                console.log('🔔 Incoming call received:', callData);
+                setIncomingCall(callData);
+            });
+            
+            // Listen for call status updates
+            socket.on('call:answered', (data) => {
+                console.log('📞 Call answered:', data);
+                setIncomingCall(null);
+            });
+            
+            socket.on('call:declined', (data) => {
+                console.log('📞 Call declined:', data);
+                setIncomingCall(null);
+            });
+            
+            socket.on('call:ended', (data) => {
+                console.log('📞 Call ended:', data);
+                setIncomingCall(null);
+            });
+            
+            // Listen for errors
+            socket.on('error', (error) => {
+                console.error('🚨 Socket error:', error);
+            });
+            
+            // Listen for test notifications
+            socket.on('test:received', (data) => {
+                console.log('🧪 TEST NOTIFICATION RECEIVED:', data);
+                alert(`Test notification from ${data.from}: ${data.message}`);
+            });
+            
+            return () => {
+                if (socket) {
+                    socket.off('user:joined');
+                    socket.off('call:incoming');
+                    socket.off('call:answered');
+                    socket.off('call:declined');
+                    socket.off('call:ended');
+                    socket.off('error');
+                    socket.off('test:received');
+                }
+            };
+        }
+    }, [user, socket, isConnected]);
+
+    // Test function
+    const sendTestNotification = (targetUserId) => {
+        if (socket && user) {
+            console.log(`🧪 Sending test notification to: ${targetUserId}`);
+            socket.emit('test:notification', {
+                targetUserId,
+                message: `Hello from ${user.uid}!`
+            });
+        }
+    };
+
+    // Expose test function globally for console testing
+    React.useEffect(() => {
+        if (typeof window !== 'undefined') {
+            window.testNotification = sendTestNotification;
+            window.currentUserId = user?.uid;
+            console.log('🧪 Test functions available:');
+            console.log('- window.testNotification(targetUserId) - send test notification');
+            console.log('- window.currentUserId - your user ID:', user?.uid);
+        }
+    }, [socket, user]);
+
+    const handleAnswerCall = () => {
+        if (incomingCall && socket && socket.connected) {
+            console.log('📞 Answering call:', incomingCall);
+            
+            // Store call reference to prevent duplicate answers
+            const currentCall = { ...incomingCall };
+            
+            // Clear incoming call immediately to prevent duplicate answers
+            setIncomingCall(null);
+            
+            // Emit call answer event with proper data
+            socket.emit('call:answer', { 
+                callId: currentCall.callId,
+                conversationId: currentCall.conversationId,
+                callerId: currentCall.callerId,
+                answererId: user.uid,
+                signal: null // WebRTC signal will be handled by useWebRTC hook
+            });
+            
+            // Navigate to chat page for the call
+            setCurrentPage({ 
+                page: 'chat', 
+                conversationId: currentCall.conversationId 
+            });
+            
+        } else {
+            console.error('❌ Cannot answer call - socket not connected or missing call data');
+        }
+    };
+
+    const handleDeclineCall = () => {
+        if (incomingCall && socket && socket.connected) {
+            console.log('📞 Declining call:', incomingCall);
+            
+            // Store call reference to prevent issues
+            const currentCall = { ...incomingCall };
+            
+            // Clear incoming call immediately
+            setIncomingCall(null);
+            
+            socket.emit('call:decline', { 
+                callId: currentCall.callId,
+                conversationId: currentCall.conversationId,
+                callerId: currentCall.callerId,
+                userId: user.uid 
+            });
+            
+        } else {
+            console.error('❌ Cannot decline call - socket not connected or missing call data');
+        }
+    };
+
     const handleSignOut = async () => {
+        if (socket) {
+            socket.disconnect();
+        }
         await signOut(auth);
         setCurrentPage({ page: 'home', profileId: null });
     };    
@@ -71,6 +218,8 @@ export default function App() {
     const navigateToHome = () => setCurrentPage({ page: 'home', profileId: null });
     const navigateToSearch = () => setCurrentPage({ page: 'search', profileId: null });
     const navigateToNotifications = () => setCurrentPage({ page: 'notifications', profileId: null });
+    const navigateToChat = () => setCurrentPage({ page: 'chat', profileId: null });
+    const navigateToChatList = () => setCurrentPage({ page: 'chat-list', profileId: null });
 
 const renderPage = () => {
     switch (currentPage.page) {
@@ -90,6 +239,15 @@ const renderPage = () => {
                 navigateToHome={navigateToHome}
                 onUpdate={() => fetchCurrentUserData(user)}
             />;
+        case 'chat':
+            return <ChatPage conversationId={currentPage.conversationId} />;
+        case 'chat-list':
+            return <ChatListPage 
+                navigateToChat={(conversationId) => {
+                    setCurrentPage({ page: 'chat', conversationId });
+                }}
+                navigateToHome={navigateToHome}
+            />;
         default:
             return (
                 <div style={{
@@ -104,6 +262,7 @@ const renderPage = () => {
                         navigateToProfile={navigateToProfile}
                         navigateToSearch={navigateToSearch}
                         navigateToNotifications={navigateToNotifications}
+                        navigateToChat={navigateToChatList}
                     />
                 </div>
             );
@@ -117,5 +276,19 @@ const renderPage = () => {
     if (!user.emailVerified) return <EmailVerificationPage user={user} />;
     if (!userData) return <UsernameSelectionPage user={user} onUsernameSet={() => fetchCurrentUserData(user)} />;
     
-    return renderPage();
+    return (
+        <AuthProvider>
+            <Router>
+                {renderPage()}
+            </Router>
+            {/* Global Call Notification Modal */}
+            {incomingCall && (
+                <CallModal 
+                    call={incomingCall}
+                    onAnswer={handleAnswerCall}
+                    onDecline={handleDeclineCall}
+                />
+            )}
+        </AuthProvider>
+    );
 }

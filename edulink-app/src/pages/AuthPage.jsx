@@ -7,7 +7,7 @@ import {
     sendEmailVerification,
     sendPasswordResetEmail
 } from 'firebase/auth';
-import { auth } from '../App'; // Import auth from our main App.jsx
+import { auth } from '../App'; 
 import './AuthPage.css';
 
 function getFriendlyErrorMessage(errorCode) {
@@ -23,7 +23,6 @@ function getFriendlyErrorMessage(errorCode) {
     }
 }
 
-// Main component for this file
 export default function AuthPage() {
     const [isLogin, setIsLogin] = React.useState(true);
     const handleGoogleSignIn = async () => {
@@ -46,7 +45,6 @@ export default function AuthPage() {
     );
 };
 
-// Update styles for LoginForm, SignUpForm, and ForgotPasswordForm to match the new design
 const LoginForm = () => {
     const [email, setEmail] = React.useState('');
     const [password, setPassword] = React.useState('');

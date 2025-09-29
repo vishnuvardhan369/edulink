@@ -9,6 +9,8 @@
     "dev:watch": "NODE_ENV=development nodemon index.js",
     "prod": "NODE_ENV=production node index.js",
     "init-db": "node init-db.js",
+    "setup-do-schema": "node setup-do-schema.js",
+    "migrate-data": "node migrate-data.js",
     "test": "echo \"Tests not configured\" && exit 0"
   },
   "engines": {
@@ -19,11 +21,14 @@
   "license": "ISC",
   "dependencies": {
     "@azure/storage-blob": "latest",
-    "cors": "latest",
+    "cors": "^2.8.5",
     "dotenv": "latest",
     "express": "^4.19.2",
     "firebase-admin": "latest",
-    "pg": "^8.16.3"
+    "multer": "^2.0.2",
+    "pg": "^8.16.3",
+    "socket.io": "^4.8.1",
+    "uuid": "^13.0.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"

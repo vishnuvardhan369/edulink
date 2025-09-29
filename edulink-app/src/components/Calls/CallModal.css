@@ -1,0 +1,209 @@
+/* Call Modal */
+.call-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    backdrop-filter: blur(10px);
+}
+
+.call-modal {
+    background: white;
+    border-radius: 20px;
+    padding: 40px;
+    text-align: center;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+    max-width: 400px;
+    width: 90%;
+}
+
+.call-header {
+    margin-bottom: 30px;
+}
+
+.call-type {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-size: 16px;
+    color: #666;
+    font-weight: 500;
+}
+
+.call-icon {
+    font-size: 20px;
+}
+
+.caller-info {
+    margin-bottom: 40px;
+    position: relative;
+}
+
+.caller-avatar {
+    position: relative;
+    display: inline-block;
+    margin-bottom: 20px;
+}
+
+.avatar-circle.large {
+    width: 120px;
+    height: 120px;
+    font-size: 60px;
+}
+
+.calling-animation {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+}
+
+.pulse-ring {
+    position: absolute;
+    width: 160px;
+    height: 160px;
+    border: 3px solid rgba(0, 122, 255, 0.3);
+    border-radius: 50%;
+    animation: pulse 2s cubic-bezier(0.455, 0.03, 0.515, 0.955) infinite;
+    transform: translate(-50%, -50%);
+}
+
+.pulse-ring.delay-1 {
+    animation-delay: 0.5s;
+}
+
+.pulse-ring.delay-2 {
+    animation-delay: 1s;
+}
+
+@keyframes pulse {
+    0% {
+        transform: translate(-50%, -50%) scale(0.8);
+        opacity: 1;
+    }
+    100% {
+        transform: translate(-50%, -50%) scale(1.4);
+        opacity: 0;
+    }
+}
+
+.caller-name {
+    font-size: 24px;
+    font-weight: 600;
+    color: #333;
+    margin: 0 0 8px 0;
+}
+
+.call-status {
+    font-size: 16px;
+    color: #666;
+    margin: 0;
+}
+
+.call-actions {
+    display: flex;
+    justify-content: center;
+    gap: 40px;
+}
+
+.call-button {
+    width: 70px;
+    height: 70px;
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    font-size: 12px;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.call-button.decline {
+    background: #ff3b30;
+    color: white;
+}
+
+.call-button.decline:hover {
+    background: #d70015;
+    transform: scale(1.05);
+}
+
+.call-button.answer {
+    background: #34c759;
+    color: white;
+}
+
+.call-button.answer:hover {
+    background: #248a3d;
+    transform: scale(1.05);
+}
+
+.call-button.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none !important;
+}
+
+.call-button.disabled:hover {
+    transform: none !important;
+    background: inherit;
+}
+
+.button-icon {
+    font-size: 24px;
+}
+
+.button-text {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Responsive Design */
+@media (max-width: 480px) {
+    .call-modal {
+        padding: 30px 20px;
+    }
+    
+    .avatar-circle.large {
+        width: 100px;
+        height: 100px;
+        font-size: 50px;
+    }
+    
+    .pulse-ring {
+        width: 140px;
+        height: 140px;
+    }
+    
+    .caller-name {
+        font-size: 20px;
+    }
+    
+    .call-actions {
+        gap: 30px;
+    }
+    
+    .call-button {
+        width: 60px;
+        height: 60px;
+    }
+    
+    .button-icon {
+        font-size: 20px;
+    }
+}

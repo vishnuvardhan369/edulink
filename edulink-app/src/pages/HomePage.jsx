@@ -71,7 +71,7 @@ function ConnectionRequests({ requests, navigateToProfile }) {
     );
 }
 
-export default function HomePage({ userData, onSignOut, navigateToProfile, navigateToSearch, navigateToNotifications }) {
+export default function HomePage({ userData, onSignOut, navigateToProfile, navigateToSearch, navigateToNotifications, navigateToChat }) {
     const [feedItems, setFeedItems] = React.useState([]);
     const [loading, setLoading] = React.useState(true);
     const [error, setError] = React.useState('');
@@ -141,6 +141,9 @@ export default function HomePage({ userData, onSignOut, navigateToProfile, navig
                         </button>
                         <button onClick={navigateToSearch} className="btn btn-secondary">
                             Search
+                        </button>
+                        <button onClick={navigateToChat} className="btn btn-secondary">
+                            💬 Messages
                         </button>
                         <button onClick={() => navigateToProfile(auth.currentUser.uid)} className="btn btn-secondary">
                             My Profile

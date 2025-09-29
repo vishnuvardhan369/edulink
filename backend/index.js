@@ -1,9 +1,27 @@
 const express = require('express');
 const cors = require('cors');
+const { createServer } = require('http');
+const { Server } = require('socket.io');
 require('dotenv').config(); 
 const { Client, Pool } = require('pg');
 const { BlobServiceClient, StorageSharedKeyCredential, BlobSASPermissions, generateBlobSASQueryParameters } = require('@azure/storage-blob');
 const admin = require('firebase-admin');
+const { v4: uuidv4 } = require('uuid');
+
+// Add global error handlers
+process.on('uncaughtException', (error) => {
+  console.error('❌ Uncaught Exception:', error);
+  console.error('Stack:', error.stack);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ Unhandled Rejection at:', promise);
+  console.error('Reason:', reason);
+  process.exit(1);
+});
+
+console.log('🔧 Global error handlers set up');
 
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
 admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
@@ -15,14 +33,14 @@ const pool = new Pool({
   },
   max: 20,
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
+  connectionTimeoutMillis: 15000,
 });
 
 const client = pool;
 
 pool.connect()
   .then((client) => {
-    console.log('Connected to Neon PostgreSQL database');
+    console.log('Connected to DigitalOcean PostgreSQL database');
     client.release();
   })
   .catch(err => {
@@ -34,15 +52,33 @@ pool.on('error', (err) => {
 });
 
 const app = express();
+const server = createServer(app);
+const io = new Server(server, {
+    cors: {
+        origin: process.env.NODE_ENV === 'production' 
+            ? ["https://edulink-g0gqgxhhezfjbzg4.southindia-01.azurewebsites.net"]
+            : ["http://localhost:5173", "http://localhost:3000", "https://www.edulink.social"],
+        methods: ["GET", "POST"],
+        credentials: true
+    },
+    pingTimeout: 60000,
+    pingInterval: 25000,
+    transports: ['websocket', 'polling']
+});
 const PORT = process.env.PORT;
 
 const corsOptions = {
     origin: function(origin, callback) {
-        const allowedOrigins = [
-            "https://www.edulink.social",
-            "http://localhost:5173",
-            "http://localhost:3000"
-        ];
+        const allowedOrigins = process.env.NODE_ENV === 'production' 
+            ? [
+                "https://edulink-g0gqgxhhezfjbzg4.southindia-01.azurewebsites.net",
+                "https://www.edulink.social"
+              ]
+            : [
+                "https://www.edulink.social",
+                "http://localhost:5173",
+                "http://localhost:3000"
+              ];
         
         if (!origin || allowedOrigins.includes(origin)) {
             callback(null, true);
@@ -71,6 +107,866 @@ if (!accountName || !accountKey) {
 const sharedKeyCredential = new StorageSharedKeyCredential(accountName, accountKey);
 
 app.get('/', (req, res) => res.send('EduLink Backend is running! v2.0 - DB Compatible'));
+
+// Store active users for real-time features
+const activeUsers = new Map(); // userId -> { socketId, status, lastSeen }
+const activeRooms = new Map(); // conversationId -> Set of socketIds
+
+// Socket.IO Connection Handler
+io.on('connection', (socket) => {
+    console.log('🔗 User connected:', socket.id);
+
+    // Handle user authentication and join
+    socket.on('user:join', async (userIdOrData) => {
+        try {
+            // Handle both userId string and userData object for backward compatibility
+            const userId = typeof userIdOrData === 'string' ? userIdOrData : userIdOrData.userId;
+            const username = typeof userIdOrData === 'object' ? userIdOrData.username : null;
+            
+            socket.userId = userId;
+            if (username) socket.username = username;
+            
+            // Join user to their personal room for notifications
+            socket.join(userId);
+            console.log(`👤 User ${userId} joined their personal room`);
+            
+            // Store active user
+            activeUsers.set(userId, {
+                socketId: socket.id,
+                status: 'online',
+                lastSeen: new Date()
+            });
+
+            // Confirm successful join
+            socket.emit('user:joined', { 
+                userId, 
+                status: 'connected',
+                message: 'Successfully connected to real-time notifications' 
+            });
+
+            // Skip conversation room joining for now to avoid database issues
+            console.log(`✅ User ${userId} successfully joined and ready for notifications`);
+            
+        } catch (error) {
+            console.error('❌ Error in user:join:', error);
+            socket.emit('error', { message: 'Failed to join notifications' });
+        }
+    });
+
+    // Handle sending messages
+    socket.on('message:send', async (messageData) => {
+        try {
+            const { conversationId, messageText, messageType = 'text', fileUrl, fileName, replyToMessageId } = messageData;
+            const senderId = socket.userId;
+
+            if (!senderId) {
+                socket.emit('error', { message: 'User not authenticated' });
+                return;
+            }
+
+            // Verify user is participant in conversation
+            const participantCheck = await client.query(
+                'SELECT 1 FROM conversation_participants WHERE conversation_id = $1 AND user_id = $2',
+                [conversationId, senderId]
+            );
+
+            if (participantCheck.rows.length === 0) {
+                socket.emit('error', { message: 'Not authorized to send message to this conversation' });
+                return;
+            }
+
+            // Insert message
+            const messageId = uuidv4();
+            const insertMessageQuery = `
+                INSERT INTO messages (message_id, conversation_id, sender_id, message_text, message_type, file_url, file_name, reply_to_message_id)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                RETURNING message_id, created_at
+            `;
+            
+            const messageResult = await client.query(insertMessageQuery, [
+                messageId, conversationId, senderId, messageText, messageType, fileUrl, fileName, replyToMessageId
+            ]);
+
+            // Get sender info
+            const senderInfo = await client.query(
+                'SELECT username, display_name, profile_picture_url FROM users WHERE user_id = $1',
+                [senderId]
+            );
+
+            const message = {
+                message_id: messageId,
+                conversation_id: conversationId,
+                sender_id: senderId,
+                sender_username: senderInfo.rows[0].username,
+                sender_display_name: senderInfo.rows[0].display_name,
+                sender_profile_picture: senderInfo.rows[0].profile_picture_url,
+                message_text: messageText,
+                message_type: messageType,
+                file_url: fileUrl,
+                file_name: fileName,
+                reply_to_message_id: replyToMessageId,
+                created_at: messageResult.rows[0].created_at,
+                reactions: []
+            };
+
+            // Update conversation updated_at
+            await client.query(
+                'UPDATE conversations SET updated_at = NOW() WHERE conversation_id = $1',
+                [conversationId]
+            );
+
+            // Broadcast message to conversation room
+            io.to(conversationId).emit('message:receive', message);
+
+            console.log(`📨 Message sent in conversation ${conversationId}`);
+        } catch (error) {
+            console.error('❌ Error in message:send:', error);
+            socket.emit('error', { message: 'Failed to send message' });
+        }
+    });
+
+    // Handle typing indicators
+    socket.on('typing:start', async (data) => {
+        const { conversationId } = data;
+        const userId = socket.userId;
+
+        if (!userId) return;
+
+        try {
+            // Insert/update typing indicator
+            await client.query(`
+                INSERT INTO typing_indicators (conversation_id, user_id, expires_at)
+                VALUES ($1, $2, NOW() + INTERVAL '10 seconds')
+                ON CONFLICT (conversation_id, user_id) 
+                DO UPDATE SET started_at = NOW(), expires_at = NOW() + INTERVAL '10 seconds'
+            `, [conversationId, userId]);
+
+            // Broadcast to others in conversation
+            socket.to(conversationId).emit('typing:user_start', {
+                userId: userId,
+                username: socket.username
+            });
+        } catch (error) {
+            console.error('❌ Error in typing:start:', error);
+        }
+    });
+
+    socket.on('typing:stop', async (data) => {
+        const { conversationId } = data;
+        const userId = socket.userId;
+
+        if (!userId) return;
+
+        try {
+            // Remove typing indicator
+            await client.query(
+                'DELETE FROM typing_indicators WHERE conversation_id = $1 AND user_id = $2',
+                [conversationId, userId]
+            );
+
+            // Broadcast to others in conversation
+            socket.to(conversationId).emit('typing:user_stop', {
+                userId: userId
+            });
+        } catch (error) {
+            console.error('❌ Error in typing:stop:', error);
+        }
+    });
+
+    // WebRTC Signaling for Voice/Video Calls
+    socket.on('call:start', async (data) => {
+        const { conversationId, callType, targetUserId, signal } = data; // callType: 'audio', 'video', 'screen'
+        const callerId = socket.userId;
+
+        console.log(`🔥 CALL:START received:`, {
+            callerId,
+            targetUserId,
+            callType,
+            conversationId,
+            hasSignal: !!signal
+        });
+
+        if (!callerId) {
+            console.error('❌ No callerId found in socket');
+            return;
+        }
+
+        try {
+            // Create call log entry
+            const callId = uuidv4();
+            
+            // Use simple caller name for now (avoid database issues)
+            const callerName = `User ${callerId.substring(0, 8)}`;
+
+            console.log(`👤 Caller: ${callerName}`);
+            console.log(`🎯 Target user: ${targetUserId}`);
+            console.log(`👥 Active users:`, Array.from(activeUsers.keys()));
+
+            // Check if target user is online
+            const targetUser = activeUsers.get(targetUserId);
+            if (targetUser) {
+                // User is online - send real-time notification
+                console.log(`📞 Target user IS ONLINE - sending notification to room: ${targetUserId}`);
+
+                // Send to user's personal room (more reliable than socket ID)
+                console.log(`📤 Emitting call:incoming to room: ${targetUserId}`);
+                io.to(targetUserId).emit('call:incoming', {
+                    callId,
+                    callType,
+                    callerId,
+                    callerName,
+                    conversationId,
+                    signal
+                });
+                console.log(`✅ Call notification sent successfully`);
+                
+            } else {
+                // User is offline
+                console.log(`📵 Target user IS OFFLINE: ${targetUserId}`);
+                socket.emit('call:user_offline', { targetUserId });
+            }
+
+        } catch (error) {
+            console.error('❌ Error in call:start:', error);
+        }
+    });
+
+    // Test notification function
+    socket.on('test:notification', (data) => {
+        const { targetUserId, message } = data;
+        const senderId = socket.userId;
+        
+        console.log(`🧪 TEST NOTIFICATION:`, {
+            from: senderId,
+            to: targetUserId,
+            message
+        });
+        
+        // Send test notification to target user
+        io.to(targetUserId).emit('test:received', {
+            from: senderId,
+            message: message || 'Test notification!'
+        });
+        
+        console.log(`✅ Test notification sent to room: ${targetUserId}`);
+    });
+
+    // Track active calls to prevent duplicates
+    const activeCalls = new Map();
+    
+    socket.on('call:answer', async (data) => {
+        const { conversationId, callerId, signal, callId } = data;
+        const answererId = socket.userId;
+
+        console.log(`🔥 CALL:ANSWER received:`, {
+            callId,
+            callerId,
+            answererId,
+            conversationId
+        });
+
+        if (!answererId) {
+            console.error('❌ No answererId found in socket');
+            return;
+        }
+
+        // Check if call was already answered
+        const callKey = `${callerId}-${conversationId}`;
+        if (activeCalls.has(callKey)) {
+            console.log('⚠️ Call already answered, ignoring duplicate');
+            return;
+        }
+        
+        // Mark call as answered
+        activeCalls.set(callKey, { answererId: answererId, timestamp: Date.now() });
+
+        try {
+            // Get caller's socket
+            const callerUser = activeUsers.get(callerId);
+            if (callerUser) {
+                console.log(`📞 Sending call:answered to caller: ${callerId}`);
+                
+                // Send to caller's room with WebRTC signal if provided
+                io.to(callerId).emit('call:answered', {
+                    conversationId,
+                    answererId,
+                    callId,
+                    signal // Include WebRTC answer signal
+                });
+
+                console.log(`✅ Call answered notification sent: ${callerId} <- ${answererId}`);
+            } else {
+                console.log(`❌ Caller ${callerId} not found in active users`);
+            }
+        } catch (error) {
+            console.error('❌ Error in call:answer:', error);
+        }
+    });
+
+    // Handle WebRTC signaling
+    socket.on('call:signal', (data) => {
+        const { conversationId, targetUserId, signal } = data;
+        const senderId = socket.userId;
+        
+        console.log(`📡 WebRTC signal relay: ${senderId} -> ${targetUserId}`);
+        console.log(`📡 Signal type: ${signal.type || 'unknown'}`);
+        
+        // Send to target user's room (more reliable)
+        io.to(targetUserId).emit('call:signal', {
+            conversationId,
+            senderId,
+            signal
+        });
+    });
+
+    // Handle call end
+    socket.on('call:end', (data) => {
+        const { conversationId, targetUserId } = data;
+        const senderId = socket.userId;
+        
+        console.log(`📞 Call ended by: ${senderId}`);
+        
+        // Remove from active calls
+        const callKey1 = `${senderId}-${conversationId}`;
+        const callKey2 = `${targetUserId}-${conversationId}`;
+        activeCalls.delete(callKey1);
+        activeCalls.delete(callKey2);
+        
+        // Notify target user
+        io.to(targetUserId).emit('call:ended', {
+            conversationId,
+            senderId
+        });
+    });
+
+    socket.on('call:decline', async (data) => {
+        const { conversationId, callerId } = data;
+        const declinerId = socket.userId;
+        
+        console.log(`📞 Call declined by: ${declinerId}`);
+        
+        // Remove from active calls
+        const callKey = `${callerId}-${conversationId}`;
+        activeCalls.delete(callKey);
+        
+        try {
+            // Update call log status to declined
+            await client.query(`
+                UPDATE call_logs 
+                SET status = 'declined', ended_at = NOW()
+                WHERE conversation_id = $1 AND caller_id = $2 AND status = 'ringing'
+            `, [conversationId, callerId]);
+
+            const callerUser = activeUsers.get(callerId);
+            if (callerUser) {
+                io.to(callerUser.socketId).emit('call:declined', {
+                    conversationId
+                });
+            }
+
+            console.log(`❌ Call declined: ${callerId}`);
+        } catch (error) {
+            console.error('❌ Error in call:decline:', error);
+        }
+    });
+
+    socket.on('call:end', async (data) => {
+        const { conversationId, targetUserId } = data;
+        
+        try {
+            // Update call log status to ended
+            await client.query(`
+                UPDATE call_logs 
+                SET status = 'ended', ended_at = NOW()
+                WHERE conversation_id = $1 AND status IN ('ringing', 'answered')
+            `, [conversationId]);
+
+            const targetUser = activeUsers.get(targetUserId);
+            if (targetUser) {
+                io.to(targetUser.socketId).emit('call:ended', {
+                    conversationId
+                });
+            }
+
+            console.log(`📞 Call ended: ${conversationId}`);
+        } catch (error) {
+            console.error('❌ Error in call:end:', error);
+        }
+    });
+
+    // Cleanup on disconnect
+    socket.on('disconnect', async () => {
+        console.log(`🔌 User disconnected: ${socket.userId}`);
+        
+        if (socket.userId) {
+            // Remove from active users
+            activeUsers.delete(socket.userId);
+            
+            // End any active calls
+            try {
+                await client.query(`
+                    UPDATE call_logs 
+                    SET status = 'ended', ended_at = NOW(),
+                        duration = EXTRACT(EPOCH FROM (NOW() - started_at))::INTEGER
+                    WHERE caller_id = $1 AND status IN ('initiated', 'answered')
+                `, [socket.userId]);
+                
+                // Notify other participants of disconnect
+                socket.broadcast.emit('user:disconnected', { 
+                    userId: socket.userId 
+                });
+                
+            } catch (error) {
+                console.error('❌ Error in disconnect cleanup:', error);
+            }
+        }
+    });
+
+    socket.on('call:end', async (data) => {
+        const { conversationId, targetUserId } = data;
+        const callerId = socket.userId;
+
+        try {
+            // Update call logs
+            await client.query(`
+                UPDATE call_logs 
+                SET status = 'ended', ended_at = NOW(),
+                    duration = EXTRACT(EPOCH FROM (NOW() - started_at))::INTEGER
+                WHERE conversation_id = $1 AND (caller_id = $2 OR caller_id = $3) AND status IN ('initiated', 'answered')
+            `, [conversationId, callerId, targetUserId]);
+
+            // Notify the other participant
+            const targetUser = activeUsers.get(targetUserId);
+            if (targetUser) {
+                io.to(targetUser.socketId).emit('call:ended', { 
+                    conversationId,
+                    endedBy: callerId 
+                });
+            }
+        } catch (error) {
+            console.error('❌ Error in call:end:', error);
+        }
+    });
+
+    // Handle disconnection
+    socket.on('disconnect', async () => {
+        const userId = socket.userId;
+        
+        if (userId) {
+            // Update user status to offline
+            activeUsers.delete(userId);
+            
+            // Remove from active rooms
+            for (const [roomId, sockets] of activeRooms.entries()) {
+                sockets.delete(socket.id);
+                if (sockets.size === 0) {
+                    activeRooms.delete(roomId);
+                }
+            }
+
+            // Remove typing indicators
+            try {
+                await client.query('DELETE FROM typing_indicators WHERE user_id = $1', [userId]);
+            } catch (error) {
+                console.error('❌ Error cleaning up typing indicators:', error);
+            }
+
+            // Broadcast user offline status
+            socket.broadcast.emit('user:status_changed', {
+                userId: userId,
+                status: 'offline',
+                lastSeen: new Date()
+            });
+        }
+
+        console.log('🔌 User disconnected:', socket.id);
+    });
+});
+
+// Chat API Endpoints
+
+// Get user's conversations
+app.get('/api/chats', async (req, res) => {
+    try {
+        const { userId } = req.query;
+        if (!userId) return res.status(400).send({ error: 'User ID is required' });
+
+        const conversationsQuery = `
+            SELECT 
+                c.conversation_id,
+                c.type,
+                c.name,
+                c.avatar_url,
+                c.created_by,
+                c.created_at,
+                c.updated_at,
+                (
+                    SELECT json_agg(
+                        json_build_object(
+                            'user_id', u.user_id,
+                            'username', u.username,
+                            'display_name', u.display_name,
+                            'profile_picture_url', u.profile_picture_url,
+                            'role', cp.role
+                        )
+                    )
+                    FROM conversation_participants cp
+                    JOIN users u ON cp.user_id = u.user_id
+                    WHERE cp.conversation_id = c.conversation_id
+                ) as participants,
+                (
+                    SELECT json_build_object(
+                        'message_id', m.message_id,
+                        'sender_id', m.sender_id,
+                        'sender_username', u.username,
+                        'sender_display_name', u.display_name,
+                        'message_text', m.message_text,
+                        'message_type', m.message_type,
+                        'created_at', m.created_at
+                    )
+                    FROM messages m
+                    JOIN users u ON m.sender_id = u.user_id
+                    WHERE m.conversation_id = c.conversation_id
+                    ORDER BY m.created_at DESC
+                    LIMIT 1
+                ) as last_message,
+                (
+                    SELECT COUNT(*)::INTEGER
+                    FROM messages m
+                    LEFT JOIN message_status ms ON m.message_id = ms.message_id AND ms.user_id = $1
+                    WHERE m.conversation_id = c.conversation_id 
+                    AND m.sender_id != $1
+                    AND (ms.status IS NULL OR ms.status != 'read')
+                ) as unread_count
+            FROM conversations c
+            JOIN conversation_participants cp ON c.conversation_id = cp.conversation_id
+            WHERE cp.user_id = $1 AND c.is_active = true
+            ORDER BY c.updated_at DESC
+        `;
+
+        const result = await client.query(conversationsQuery, [userId]);
+        res.status(200).send(result.rows);
+    } catch (error) {
+        console.error('Error fetching conversations:', error);
+        res.status(500).send({ error: 'Failed to fetch conversations' });
+    }
+});
+
+// Create new conversation
+app.post('/api/chats', async (req, res) => {
+    try {
+        const { createdBy, type = 'direct', name, participants } = req.body;
+        
+        if (!createdBy || !participants || participants.length === 0) {
+            return res.status(400).send({ error: 'Creator and participants are required' });
+        }
+
+        await client.query('BEGIN');
+
+        const conversationId = uuidv4();
+        
+        // Create conversation
+        await client.query(`
+            INSERT INTO conversations (conversation_id, type, name, created_by)
+            VALUES ($1, $2, $3, $4)
+        `, [conversationId, type, name, createdBy]);
+
+        // Add participants (including creator)
+        const allParticipants = [...new Set([createdBy, ...participants])];
+        for (const participantId of allParticipants) {
+            const role = participantId === createdBy ? 'admin' : 'member';
+            await client.query(`
+                INSERT INTO conversation_participants (conversation_id, user_id, role)
+                VALUES ($1, $2, $3)
+            `, [conversationId, participantId, role]);
+        }
+
+        await client.query('COMMIT');
+
+        // Return the new conversation
+        const newConversation = await client.query(`
+            SELECT c.*, 
+                   json_agg(
+                       json_build_object(
+                           'user_id', u.user_id,
+                           'username', u.username,
+                           'display_name', u.display_name,
+                           'profile_picture_url', u.profile_picture_url
+                       )
+                   ) as participants
+            FROM conversations c
+            JOIN conversation_participants cp ON c.conversation_id = cp.conversation_id
+            JOIN users u ON cp.user_id = u.user_id
+            WHERE c.conversation_id = $1
+            GROUP BY c.conversation_id
+        `, [conversationId]);
+
+        res.status(201).send(newConversation.rows[0]);
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Error creating conversation:', error);
+        res.status(500).send({ error: 'Failed to create conversation' });
+    }
+});
+
+// Get messages for a conversation
+app.get('/api/chats/:conversationId/messages', async (req, res) => {
+    try {
+        const { conversationId } = req.params;
+        const { userId, page = 1, limit = 50 } = req.query;
+        const offset = (page - 1) * limit;
+
+        if (!userId) return res.status(400).send({ error: 'User ID is required' });
+
+        // Verify user is participant
+        const participantCheck = await client.query(
+            'SELECT 1 FROM conversation_participants WHERE conversation_id = $1 AND user_id = $2',
+            [conversationId, userId]
+        );
+
+        if (participantCheck.rows.length === 0) {
+            return res.status(403).send({ error: 'Not authorized to view this conversation' });
+        }
+
+        // Get messages with sender info and reactions
+        const messagesQuery = `
+            SELECT 
+                m.message_id,
+                m.conversation_id,
+                m.sender_id,
+                u.username as sender_username,
+                u.display_name as sender_display_name,
+                u.profile_picture_url as sender_profile_picture,
+                m.message_text,
+                m.message_type,
+                m.file_url,
+                m.file_name,
+                m.call_data,
+                m.reply_to_message_id,
+                m.created_at,
+                m.edited_at,
+                COALESCE(
+                    json_agg(
+                        CASE WHEN mr.reaction_id IS NOT NULL THEN
+                            json_build_object(
+                                'emoji', mr.emoji,
+                                'user_id', mr.user_id,
+                                'username', ru.username
+                            )
+                        END
+                    ) FILTER (WHERE mr.reaction_id IS NOT NULL),
+                    '[]'::json
+                ) as reactions
+            FROM messages m
+            JOIN users u ON m.sender_id = u.user_id
+            LEFT JOIN message_reactions mr ON m.message_id = mr.message_id
+            LEFT JOIN users ru ON mr.user_id = ru.user_id
+            WHERE m.conversation_id = $1 AND m.is_deleted = false
+            GROUP BY m.message_id, u.user_id
+            ORDER BY m.created_at DESC
+            LIMIT $2 OFFSET $3
+        `;
+
+        const result = await client.query(messagesQuery, [conversationId, limit, offset]);
+        const messages = result.rows.reverse(); // Reverse to show oldest first
+
+        res.status(200).send(messages);
+    } catch (error) {
+        console.error('Error fetching messages:', error);
+        res.status(500).send({ error: 'Failed to fetch messages' });
+    }
+});
+
+// Mark messages as read
+app.put('/api/chats/:conversationId/read', async (req, res) => {
+    try {
+        const { conversationId } = req.params;
+        const { userId, lastReadMessageId } = req.body;
+
+        if (!userId) return res.status(400).send({ error: 'User ID is required' });
+
+        // Update participant's last_read_at
+        await client.query(`
+            UPDATE conversation_participants 
+            SET last_read_at = NOW()
+            WHERE conversation_id = $1 AND user_id = $2
+        `, [conversationId, userId]);
+
+        // Mark messages as read
+        if (lastReadMessageId) {
+            await client.query(`
+                INSERT INTO message_status (message_id, user_id, status)
+                SELECT m.message_id, $2, 'read'
+                FROM messages m
+                WHERE m.conversation_id = $1 
+                AND m.sender_id != $2
+                AND m.created_at <= (
+                    SELECT created_at FROM messages WHERE message_id = $3
+                )
+                ON CONFLICT (message_id, user_id) 
+                DO UPDATE SET status = 'read', timestamp = NOW()
+            `, [conversationId, userId, lastReadMessageId]);
+        }
+
+        res.status(200).send({ message: 'Messages marked as read' });
+    } catch (error) {
+        console.error('Error marking messages as read:', error);
+        res.status(500).send({ error: 'Failed to mark messages as read' });
+    }
+});
+
+// Add reaction to message
+app.post('/api/messages/:messageId/reactions', async (req, res) => {
+    try {
+        const { messageId } = req.params;
+        const { userId, emoji } = req.body;
+
+        if (!userId || !emoji) {
+            return res.status(400).send({ error: 'User ID and emoji are required' });
+        }
+
+        // Check if reaction already exists
+        const existingReaction = await client.query(
+            'SELECT reaction_id FROM message_reactions WHERE message_id = $1 AND user_id = $2 AND emoji = $3',
+            [messageId, userId, emoji]
+        );
+
+        if (existingReaction.rows.length > 0) {
+            // Remove reaction
+            await client.query(
+                'DELETE FROM message_reactions WHERE message_id = $1 AND user_id = $2 AND emoji = $3',
+                [messageId, userId, emoji]
+            );
+        } else {
+            // Add reaction
+            await client.query(
+                'INSERT INTO message_reactions (message_id, user_id, emoji) VALUES ($1, $2, $3)',
+                [messageId, userId, emoji]
+            );
+        }
+
+        // Get conversation ID for broadcasting
+        const messageInfo = await client.query(
+            'SELECT conversation_id FROM messages WHERE message_id = $1',
+            [messageId]
+        );
+
+        if (messageInfo.rows.length > 0) {
+            const conversationId = messageInfo.rows[0].conversation_id;
+            
+            // Get updated reactions
+            const reactions = await client.query(`
+                SELECT mr.emoji, mr.user_id, u.username
+                FROM message_reactions mr
+                JOIN users u ON mr.user_id = u.user_id
+                WHERE mr.message_id = $1
+            `, [messageId]);
+
+            // Broadcast reaction update
+            io.to(conversationId).emit('message:reaction_updated', {
+                messageId,
+                reactions: reactions.rows
+            });
+        }
+
+        res.status(200).send({ message: 'Reaction updated' });
+    } catch (error) {
+        console.error('Error updating reaction:', error);
+        res.status(500).send({ error: 'Failed to update reaction' });
+    }
+});
+
+// Get call logs for a conversation
+app.get('/api/chats/:conversationId/calls', async (req, res) => {
+    try {
+        const { conversationId } = req.params;
+        const { page = 1, limit = 20 } = req.query;
+        const offset = (page - 1) * limit;
+
+        const callsQuery = `
+            SELECT 
+                cl.*,
+                u.username as caller_username,
+                u.display_name as caller_display_name,
+                u.profile_picture_url as caller_profile_picture
+            FROM call_logs cl
+            JOIN users u ON cl.caller_id = u.user_id
+            WHERE cl.conversation_id = $1
+            ORDER BY cl.created_at DESC
+            LIMIT $2 OFFSET $3
+        `;
+
+        const result = await client.query(callsQuery, [conversationId, limit, offset]);
+        res.status(200).send(result.rows);
+    } catch (error) {
+        console.error('Error fetching call logs:', error);
+        res.status(500).send({ error: 'Failed to fetch call logs' });
+    }
+});
+
+// Get missed calls for a user
+app.get('/api/users/:userId/missed-calls', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { page = 1, limit = 20 } = req.query;
+        const offset = (page - 1) * limit;
+
+        const missedCallsQuery = `
+            SELECT 
+                cl.*,
+                u.username as caller_username,
+                u.display_name as caller_display_name,
+                u.profile_picture_url as caller_profile_picture,
+                c.conversation_id,
+                c.conversation_name
+            FROM call_logs cl
+            JOIN users u ON cl.caller_id = u.user_id
+            JOIN conversations c ON cl.conversation_id = c.conversation_id
+            JOIN conversation_participants cp ON c.conversation_id = cp.conversation_id
+            WHERE cp.user_id = $1 
+            AND cl.caller_id != $1
+            AND cl.status = 'missed'
+            ORDER BY cl.created_at DESC
+            LIMIT $2 OFFSET $3
+        `;
+
+        const result = await client.query(missedCallsQuery, [userId, limit, offset]);
+        res.status(200).send(result.rows);
+    } catch (error) {
+        console.error('Error fetching missed calls:', error);
+        res.status(500).send({ error: 'Failed to fetch missed calls' });
+    }
+});
+
+// File upload for chat
+app.post('/api/upload/chat-file', (req, res) => {
+    try {
+        const { fileName, conversationId } = req.body;
+        if (!fileName || !conversationId) {
+            return res.status(400).send({ error: 'fileName and conversationId are required.' });
+        }
+
+        const containerName = 'chat-files';
+        const blobName = `${conversationId}/${Date.now()}-${fileName}`;
+        
+        const sasToken = generateBlobSASQueryParameters({
+            containerName, blobName,
+            permissions: BlobSASPermissions.parse("w"),
+            startsOn: new Date(),
+            expiresOn: new Date(new Date().valueOf() + 3600 * 1000)
+        }, sharedKeyCredential).toString();
+        
+        const uploadUrl = `https://${accountName}.blob.core.windows.net/${containerName}/${blobName}?${sasToken}`;
+        const fileUrl = `https://${accountName}.blob.core.windows.net/${containerName}/${blobName}`;
+        
+        res.status(200).send({ uploadUrl, fileUrl, blobName });
+    } catch (error) {
+        console.error('Error generating chat file upload URL:', error);
+        res.status(500).send({ error: 'Failed to generate chat file upload URL.' });
+    }
+});
+
+// Existing API endpoints continue below...
 
 app.post('/api/generate-upload-url', (req, res) => {
     try {
@@ -1278,12 +2174,14 @@ app.get('/api/chats/:chatId/messages', async (req, res) => {
     }
 });
 
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`🚀 EduLink Backend Server Started!`);
   console.log(`📍 Environment: ${isDevelopment ? 'Development' : isAzure ? 'Azure Cloud' : 'Production'}`);
   console.log(`🌐 Server running on: ${isDevelopment ? `http://localhost:${PORT}` : `Port ${PORT}`}`);
-  console.log(`💾 Database: PostgreSQL ${isDevelopment ? '(Local/Neon)' : '(Neon Cloud)'}`);
+  console.log(`💾 Database: PostgreSQL ${isDevelopment ? '(DigitalOcean)' : '(DigitalOcean Cloud)'}`);
   console.log(`☁️ Storage: ${sharedKeyCredential ? 'Azure Blob Storage' : 'Not configured (Dev mode)'}`);
   console.log(`🔐 Auth: Firebase Admin SDK`);
+  console.log(`💬 Chat: Socket.IO Real-time`);
+  console.log(`📞 Calls: WebRTC P2P`);
   console.log('✅ Ready to accept requests!');
 });
