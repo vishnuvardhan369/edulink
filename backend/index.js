@@ -8,7 +8,6 @@ const { BlobServiceClient, StorageSharedKeyCredential, BlobSASPermissions, gener
 const admin = require('firebase-admin');
 const { v4: uuidv4 } = require('uuid');
 
-// Add global error handlers
 process.on('uncaughtException', (error) => {
   console.error('❌ Uncaught Exception:', error);
   console.error('Stack:', error.stack);
@@ -65,9 +64,14 @@ const io = new Server(server, {
               ]
             : [
                 "http://localhost:5173", 
+                "http://localhost:5174", 
                 "http://localhost:3000", 
                 "https://www.edulink.social",
-                "https://edulink.social"
+                "https://edulink.social",
+                // Local network testing URLs
+                "http://10.12.151.180:5173",
+                "http://10.12.151.180:5174",
+                "http://10.12.151.180:3000"
               ],
         methods: ["GET", "POST"],
         credentials: true,
@@ -94,17 +98,63 @@ const corsOptions = {
         const allowedOrigins = process.env.NODE_ENV === 'production' 
             ? [
                 "https://edulink-g0gqgxhhezfjbzg4.southindia-01.azurewebsites.net",
-                "https://www.edulink.social"
+                "https://www.edulink.social",
+                // GitHub hosting domains
+                "https://vishnuvardhan369.github.io",
+                "https://edulink-app.github.io",
+                "https://raw.githubusercontent.com",
+                // GitHub Codespaces and dev environments
+                "https://preview.app.github.dev",
+                "https://github.dev",
+                // Common hosting platforms
+                "https://netlify.app",
+                "https://vercel.app",
+                "https://surge.sh",
+                "https://herokuapp.com"
               ]
             : [
                 "https://www.edulink.social",
                 "http://localhost:5173",
-                "http://localhost:3000"
+                "http://localhost:5174",
+                "http://localhost:3000",
+                // Local network testing URLs
+                "http://10.12.151.180:5173",
+                "http://10.12.151.180:5174",
+                "http://10.12.151.180:3000",
+                // GitHub hosting domains (for development testing)
+                "https://vishnuvardhan369.github.io",
+                "https://edulink-app.github.io",
+                "https://raw.githubusercontent.com",
+                "https://preview.app.github.dev",
+                "https://github.dev"
               ];
         
-        if (!origin || allowedOrigins.includes(origin)) {
+        // Allow requests with no origin (mobile apps, Postman, etc.)
+        if (!origin) {
+            return callback(null, true);
+        }
+        
+        // Check for exact match
+        if (allowedOrigins.includes(origin)) {
             callback(null, true);
-        } else {
+        } 
+        // Check for GitHub-related domains with wildcards
+        else if (origin.includes('github.io') || 
+                 origin.includes('githubusercontent.com') ||
+                 origin.includes('github.dev') ||
+                 origin.includes('codespaces.new') ||
+                 origin.includes('preview.app.github.dev')) {
+            callback(null, true);
+        }
+        // Check for common hosting platform wildcards
+        else if (origin.includes('netlify.app') ||
+                 origin.includes('vercel.app') ||
+                 origin.includes('surge.sh') ||
+                 origin.includes('herokuapp.com')) {
+            callback(null, true);
+        }
+        else {
+            console.log(`❌ CORS blocked origin: ${origin}`);
             callback(new Error('Not allowed by CORS'));
         }
     },
@@ -178,6 +228,7 @@ app.get('/', (req, res) => res.send('EduLink Backend is running! v2.0 - DB Compa
 // Store active users for real-time features
 const activeUsers = new Map(); // userId -> { socketId, status, lastSeen }
 const activeRooms = new Map(); // conversationId -> Set of socketIds
+const activeCalls = new Map(); // Track active calls to prevent duplicates
 
 // Socket.IO Connection Handler with enhanced logging
 io.on('connection', (socket) => {
@@ -193,10 +244,6 @@ io.on('connection', (socket) => {
     // Log transport upgrades
     socket.conn.on('upgrade', (transport) => {
         console.log('⬆️ Socket transport upgraded:', socket.id, 'to', transport.name);
-    });
-
-    socket.on('disconnect', (reason) => {
-        console.log('❌ Socket disconnected:', socket.id, 'reason:', reason);
     });
 
     // Handle user authentication and join
@@ -325,7 +372,7 @@ io.on('connection', (socket) => {
             `, [conversationId, userId]);
 
             // Broadcast to others in conversation
-            socket.to(conversationId).emit('typing:user_start', {
+            io.to(conversationId).emit('typing:user_start', {
                 userId: userId,
                 username: socket.username
             });
@@ -348,7 +395,7 @@ io.on('connection', (socket) => {
             );
 
             // Broadcast to others in conversation
-            socket.to(conversationId).emit('typing:user_stop', {
+            io.to(conversationId).emit('typing:user_stop', {
                 userId: userId
             });
         } catch (error) {
@@ -357,60 +404,74 @@ io.on('connection', (socket) => {
     });
 
     // WebRTC Signaling for Voice/Video Calls
-    socket.on('call:start', async (data) => {
-        const { conversationId, callType, targetUserId, signal } = data; // callType: 'audio', 'video', 'screen'
-        const callerId = socket.userId;
+    // WebRTC Call Start Handler
+    socket.on('webrtc:call-start', async (data) => {
+        const { callId, callerId, targetUserId, conversationId, type, offer } = data;
+        const senderId = socket.userId;
 
-        console.log(`🔥 CALL:START received:`, {
-            callerId,
+        console.log(`🔥 WebRTC CALL START:`, {
+            callId,
+            callerId: callerId || senderId,
             targetUserId,
-            callType,
+            type,
             conversationId,
-            hasSignal: !!signal
+            hasOffer: !!offer
         });
 
-        if (!callerId) {
-            console.error('❌ No callerId found in socket');
+        const actualCallerId = callerId || senderId;
+        if (!actualCallerId) {
+            console.error('❌ No callerId found');
+            socket.emit('webrtc:call-failed', { error: 'No caller ID' });
             return;
         }
 
         try {
-            // Create call log entry
-            const callId = uuidv4();
-            
-            // Use simple caller name for now (avoid database issues)
-            const callerName = `User ${callerId.substring(0, 8)}`;
+            // Store call in active calls
+            activeCalls.set(callId, {
+                callId,
+                callerId: actualCallerId,
+                targetUserId,
+                conversationId,
+                type,
+                status: 'ringing',
+                startTime: Date.now()
+            });
 
-            console.log(`👤 Caller: ${callerName}`);
+            console.log(`👤 Caller: ${actualCallerId}`);
             console.log(`🎯 Target user: ${targetUserId}`);
             console.log(`👥 Active users:`, Array.from(activeUsers.keys()));
 
             // Check if target user is online
             const targetUser = activeUsers.get(targetUserId);
             if (targetUser) {
-                // User is online - send real-time notification
-                console.log(`📞 Target user IS ONLINE - sending notification to room: ${targetUserId}`);
-
-                // Send to user's personal room (more reliable than socket ID)
-                console.log(`📤 Emitting call:incoming to room: ${targetUserId}`);
-                io.to(targetUserId).emit('call:incoming', {
-                    callId,
-                    callType,
-                    callerId,
-                    callerName,
-                    conversationId,
-                    signal
-                });
-                console.log(`✅ Call notification sent successfully`);
+                console.log(`📞 Target user IS ONLINE - sending call`);
                 
+                // Send to target user's personal room
+                io.to(targetUserId).emit('webrtc:incoming-call', {
+                    callId,
+                    callerId: actualCallerId,
+                    conversationId,
+                    type,
+                    offer // Include WebRTC offer
+                });
+                
+                console.log(`✅ WebRTC call notification sent successfully`);
             } else {
-                // User is offline
                 console.log(`📵 Target user IS OFFLINE: ${targetUserId}`);
-                socket.emit('call:user_offline', { targetUserId });
+                
+                // Remove call from active calls
+                activeCalls.delete(callId);
+                
+                // Notify caller user is offline
+                socket.emit('webrtc:call-failed', {
+                    callId,
+                    error: 'User is offline'
+                });
             }
 
         } catch (error) {
-            console.error('❌ Error in call:start:', error);
+            console.error('❌ Error in webrtc:call-start:', error);
+            socket.emit('webrtc:call-failed', { callId, error: error.message });
         }
     });
 
@@ -434,18 +495,15 @@ io.on('connection', (socket) => {
         console.log(`✅ Test notification sent to room: ${targetUserId}`);
     });
 
-    // Track active calls to prevent duplicates
-    const activeCalls = new Map();
-    
-    socket.on('call:answer', async (data) => {
-        const { conversationId, callerId, signal, callId } = data;
+    // WebRTC Call Answer Handler
+    socket.on('webrtc:call-answer', async (data) => {
+        const { callId, answer } = data;
         const answererId = socket.userId;
 
-        console.log(`🔥 CALL:ANSWER received:`, {
+        console.log(`🔥 WebRTC CALL ANSWER:`, {
             callId,
-            callerId,
             answererId,
-            conversationId
+            hasAnswer: !!answer
         });
 
         if (!answererId) {
@@ -453,181 +511,129 @@ io.on('connection', (socket) => {
             return;
         }
 
-        // Check if call was already answered
-        const callKey = `${callerId}-${conversationId}`;
-        if (activeCalls.has(callKey)) {
-            console.log('⚠️ Call already answered, ignoring duplicate');
-            return;
-        }
-        
-        // Mark call as answered
-        activeCalls.set(callKey, { answererId: answererId, timestamp: Date.now() });
-
         try {
-            // Get caller's socket
-            const callerUser = activeUsers.get(callerId);
-            if (callerUser) {
-                console.log(`📞 Sending call:answered to caller: ${callerId}`);
-                
-                // Send to caller's room with WebRTC signal if provided
-                io.to(callerId).emit('call:answered', {
-                    conversationId,
-                    answererId,
-                    callId,
-                    signal // Include WebRTC answer signal
-                });
-
-                console.log(`✅ Call answered notification sent: ${callerId} <- ${answererId}`);
-            } else {
-                console.log(`❌ Caller ${callerId} not found in active users`);
+            // Get call info
+            const call = activeCalls.get(callId);
+            if (!call) {
+                console.error(`❌ Call ${callId} not found in active calls`);
+                return;
             }
+
+            // Update call status
+            call.status = 'answered';
+            call.answerTime = Date.now();
+            activeCalls.set(callId, call);
+
+            console.log(`📞 Sending webrtc:call-answered to caller: ${call.callerId}`);
+            
+            // Send answer back to caller
+            io.to(call.callerId).emit('webrtc:call-answer', {
+                callId,
+                answererId,
+                answer // Include WebRTC answer
+            });
+
+            console.log(`✅ WebRTC call answered: ${call.callerId} <- ${answererId}`);
+            
         } catch (error) {
-            console.error('❌ Error in call:answer:', error);
+            console.error('❌ Error in webrtc:call-answer:', error);
         }
     });
 
     // Handle WebRTC signaling
-    socket.on('call:signal', (data) => {
-        const { conversationId, targetUserId, signal } = data;
+    // WebRTC ICE Candidate Handler
+    socket.on('webrtc:ice-candidate', async (data) => {
+        const { callId, candidate, targetUserId } = data;
         const senderId = socket.userId;
         
-        console.log(`📡 WebRTC signal relay: ${senderId} -> ${targetUserId}`);
-        console.log(`📡 Signal type: ${signal.type || 'unknown'}`);
+        console.log(`📡 WebRTC ICE candidate: ${senderId} -> ${targetUserId}`);
+        console.log(` Candidate type:`, candidate?.candidate?.split(' ')[7] || 'unknown');
         
-        // Send to target user's room (more reliable)
-        io.to(targetUserId).emit('call:signal', {
-            conversationId,
-            senderId,
-            signal
-        });
+        // Relay ICE candidate to target user
+        const targetUser = activeUsers.get(targetUserId);
+        if (targetUser) {
+            io.to(targetUserId).emit('webrtc:ice-candidate', {
+                callId,
+                candidate,
+                senderId
+            });
+            
+            console.log(`✅ ICE candidate relayed to ${targetUserId}`);
+        } else {
+            console.error(`❌ Target user ${targetUserId} not online for ICE candidate`);
+        }
     });
 
-    // Handle call end
-    socket.on('call:end', (data) => {
-        const { conversationId, targetUserId } = data;
-        const senderId = socket.userId;
-        
-        console.log(`📞 Call ended by: ${senderId}`);
-        
-        // Remove from active calls
-        const callKey1 = `${senderId}-${conversationId}`;
-        const callKey2 = `${targetUserId}-${conversationId}`;
-        activeCalls.delete(callKey1);
-        activeCalls.delete(callKey2);
-        
-        // Notify target user
-        io.to(targetUserId).emit('call:ended', {
-            conversationId,
-            senderId
-        });
-    });
-
-    socket.on('call:decline', async (data) => {
-        const { conversationId, callerId } = data;
+    // WebRTC Call Decline Handler
+    socket.on('webrtc:call-decline', async (data) => {
+        const { callId } = data;
         const declinerId = socket.userId;
         
-        console.log(`📞 Call declined by: ${declinerId}`);
-        
-        // Remove from active calls
-        const callKey = `${callerId}-${conversationId}`;
-        activeCalls.delete(callKey);
+        console.log(`❌ WebRTC call declined: ${declinerId} declined call ${callId}`);
         
         try {
-            // Update call log status to declined
-            await client.query(`
-                UPDATE call_logs 
-                SET status = 'declined', ended_at = NOW()
-                WHERE conversation_id = $1 AND caller_id = $2 AND status = 'ringing'
-            `, [conversationId, callerId]);
-
-            const callerUser = activeUsers.get(callerId);
-            if (callerUser) {
-                io.to(callerUser.socketId).emit('call:declined', {
-                    conversationId
-                });
-            }
-
-            console.log(`❌ Call declined: ${callerId}`);
-        } catch (error) {
-            console.error('❌ Error in call:decline:', error);
-        }
-    });
-
-    socket.on('call:end', async (data) => {
-        const { conversationId, targetUserId } = data;
-        
-        try {
-            // Update call log status to ended
-            await client.query(`
-                UPDATE call_logs 
-                SET status = 'ended', ended_at = NOW()
-                WHERE conversation_id = $1 AND status IN ('ringing', 'answered')
-            `, [conversationId]);
-
-            const targetUser = activeUsers.get(targetUserId);
-            if (targetUser) {
-                io.to(targetUser.socketId).emit('call:ended', {
-                    conversationId
-                });
-            }
-
-            console.log(`📞 Call ended: ${conversationId}`);
-        } catch (error) {
-            console.error('❌ Error in call:end:', error);
-        }
-    });
-
-    // Cleanup on disconnect
-    socket.on('disconnect', async () => {
-        console.log(`🔌 User disconnected: ${socket.userId}`);
-        
-        if (socket.userId) {
-            // Remove from active users
-            activeUsers.delete(socket.userId);
-            
-            // End any active calls
-            try {
-                await client.query(`
-                    UPDATE call_logs 
-                    SET status = 'ended', ended_at = NOW(),
-                        duration = EXTRACT(EPOCH FROM (NOW() - started_at))::INTEGER
-                    WHERE caller_id = $1 AND status IN ('initiated', 'answered')
-                `, [socket.userId]);
-                
-                // Notify other participants of disconnect
-                socket.broadcast.emit('user:disconnected', { 
-                    userId: socket.userId 
+            // Get call info
+            const call = activeCalls.get(callId);
+            if (call) {
+                // Notify caller
+                io.to(call.callerId).emit('webrtc:call-decline', {
+                    callId,
+                    declinerId
                 });
                 
-            } catch (error) {
-                console.error('❌ Error in disconnect cleanup:', error);
+                // Remove from active calls
+                activeCalls.delete(callId);
+                
+                console.log(`📞 Call ${callId} declined and removed`);
             }
+        } catch (error) {
+            console.error('❌ Error in webrtc:call-decline:', error);
         }
     });
 
-    socket.on('call:end', async (data) => {
-        const { conversationId, targetUserId } = data;
-        const callerId = socket.userId;
+    // WebRTC Call End Handler
+    socket.on('webrtc:call-end', async (data) => {
+        const { callId, targetUserId } = data;
+        const senderId = socket.userId;
+
+        console.log(`📞 WebRTC call ended: ${senderId} ended call ${callId}`);
 
         try {
-            // Update call logs
-            await client.query(`
-                UPDATE call_logs 
-                SET status = 'ended', ended_at = NOW(),
-                    duration = EXTRACT(EPOCH FROM (NOW() - started_at))::INTEGER
-                WHERE conversation_id = $1 AND (caller_id = $2 OR caller_id = $3) AND status IN ('initiated', 'answered')
-            `, [conversationId, callerId, targetUserId]);
-
-            // Notify the other participant
-            const targetUser = activeUsers.get(targetUserId);
-            if (targetUser) {
-                io.to(targetUser.socketId).emit('call:ended', { 
-                    conversationId,
-                    endedBy: callerId 
-                });
+            // Get call info
+            const call = activeCalls.get(callId);
+            if (call) {
+                // Calculate duration
+                const duration = Math.floor((Date.now() - call.startTime) / 1000);
+                
+                // Notify other participant
+                const otherUserId = call.callerId === senderId ? call.targetUserId : call.callerId;
+                if (otherUserId) {
+                    io.to(otherUserId).emit('webrtc:call-end', {
+                        callId,
+                        endedBy: senderId,
+                        duration
+                    });
+                    
+                    console.log(`✅ Call end notification sent to ${otherUserId}`);
+                }
+                
+                // Remove from active calls
+                activeCalls.delete(callId);
+                
+                console.log(`📞 Call ${callId} ended (duration: ${duration}s)`);
+            } else {
+                console.log(`⚠️ Call ${callId} not found in active calls`);
+                
+                // Still try to notify target user
+                if (targetUserId) {
+                    io.to(targetUserId).emit('webrtc:call-end', {
+                        callId,
+                        endedBy: senderId
+                    });
+                }
             }
         } catch (error) {
-            console.error('❌ Error in call:end:', error);
+            console.error('❌ Error in webrtc:call-end:', error);
         }
     });
 
@@ -635,7 +641,17 @@ io.on('connection', (socket) => {
     socket.on('disconnect', async () => {
         const userId = socket.userId;
         
+        console.log(`🔌 User disconnecting: ${userId || socket.id}`);
+        
         if (userId) {
+            // Clean up active calls involving this user
+            for (const [callKey, callData] of activeCalls.entries()) {
+                if (callKey.includes(userId)) {
+                    console.log(`📞 Auto-ending call due to disconnect: ${callKey}`);
+                    activeCalls.delete(callKey);
+                }
+            }
+
             // Update user status to offline
             activeUsers.delete(userId);
             
@@ -650,8 +666,17 @@ io.on('connection', (socket) => {
             // Remove typing indicators
             try {
                 await client.query('DELETE FROM typing_indicators WHERE user_id = $1', [userId]);
+                
+                // End any active calls in database
+                await client.query(`
+                    UPDATE call_logs 
+                    SET status = 'ended', ended_at = NOW(),
+                        duration = EXTRACT(EPOCH FROM (NOW() - started_at))::INTEGER
+                    WHERE (caller_id = $1) AND status IN ('initiated', 'answered')
+                `, [userId]);
+                
             } catch (error) {
-                console.error('❌ Error cleaning up typing indicators:', error);
+                console.error('❌ Error cleaning up on disconnect:', error);
             }
 
             // Broadcast user offline status
@@ -660,9 +685,11 @@ io.on('connection', (socket) => {
                 status: 'offline',
                 lastSeen: new Date()
             });
+            
+            console.log(`✅ User ${userId} cleanup completed`);
         }
 
-        console.log('🔌 User disconnected:', socket.id);
+        console.log(`🔌 Socket disconnected: ${socket.id}`);
     });
 });
 
@@ -1746,9 +1773,12 @@ app.get('/api/users/:userId', async (req, res) => {
         `;
         
         console.log(`📝 Executing query: ${getUserQuery}`);
+        console.log(`📝 Query parameters: [${userId}]`);
         const result = await client.query(getUserQuery, [userId]);
         console.log(`✅ Query result: ${result.rows.length} rows found`);
+        
         if (result.rows.length === 0) {
+            console.log(`❌ User not found: ${userId}`);
             return res.status(404).send({ error: 'User not found.' });
         }
         
@@ -2289,10 +2319,12 @@ app.get('/api/chats/:chatId/messages', async (req, res) => {
     }
 });
 
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 EduLink Backend Server Started!`);
   console.log(`📍 Environment: ${isDevelopment ? 'Development' : isAzure ? 'Azure Cloud' : 'Production'}`);
-  console.log(`🌐 Server running on: ${isDevelopment ? `http://localhost:${PORT}` : `Port ${PORT}`}`);
+  console.log(`🌐 Server running on:`);
+  console.log(`   - Local: http://localhost:${PORT}`);
+  console.log(`   - Network: http://10.12.151.180:${PORT}`);
   console.log(`💾 Database: PostgreSQL ${isDevelopment ? '(DigitalOcean)' : '(DigitalOcean Cloud)'}`);
   console.log(`☁️ Storage: ${sharedKeyCredential ? 'Azure Blob Storage' : 'Not configured (Dev mode)'}`);
   console.log(`🔐 Auth: Firebase Admin SDK`);

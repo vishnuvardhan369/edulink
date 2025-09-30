@@ -47,15 +47,40 @@ export default function App() {
     const fetchCurrentUserData = async (currentUser) => {
         if (currentUser) {
             try {
+                // First try to fetch existing user data
                 const response = await apiCall(`/api/users/${currentUser.uid}`);
                 if (response.ok) {
                     const userData = await response.json();
                     setUserData(userData);
+                } else if (response.status === 404) {
+                    // User doesn't exist in database, create them
+                    console.log('👤 User not found in database, creating new user...');
+                    const createResponse = await apiCall('/api/users', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            userId: currentUser.uid,
+                            username: currentUser.email?.split('@')[0] || 'user',
+                            email: currentUser.email,
+                            displayName: currentUser.displayName || currentUser.email?.split('@')[0] || 'User',
+                            profilePictureUrl: currentUser.photoURL || null,
+                            bio: ''
+                        })
+                    });
+                    
+                    if (createResponse.ok) {
+                        const newUserData = await createResponse.json();
+                        console.log('✅ User created successfully:', newUserData);
+                        setUserData(newUserData);
+                    } else {
+                        console.error('❌ Failed to create user');
+                        setUserData(null);
+                    }
                 } else {
+                    console.error('❌ Failed to fetch user data:', response.status, response.statusText);
                     setUserData(null);
                 }
             } catch (error) {
-                console.error('Error fetching user data:', error);
+                console.error('❌ Error in fetchCurrentUserData:', error);
                 setUserData(null);
             }
         } else {
@@ -264,6 +289,8 @@ const renderPage = () => {
                         navigateToNotifications={navigateToNotifications}
                         navigateToChat={navigateToChatList}
                     />
+                    
+                    {/* WebRTC Test Component - Add this for testing */}
                 </div>
             );
     }

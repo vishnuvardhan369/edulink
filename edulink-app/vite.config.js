@@ -10,6 +10,20 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    host: true
-  }
+    host: '0.0.0.0', // Allow access from network devices
+    cors: true
+  },
+  build: {
+    outDir: 'dist',
+    assetsDir: 'assets',
+    // Ensure proper asset handling for GitHub Pages
+    rollupOptions: {
+      output: {
+        manualChunks: undefined,
+      }
+    }
+  },
+  base: './', // Use relative paths for assets
+  // Configure for GitHub Pages deployment
+  publicDir: 'public'
 })
