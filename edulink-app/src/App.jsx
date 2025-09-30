@@ -289,8 +289,6 @@ const renderPage = () => {
                         navigateToNotifications={navigateToNotifications}
                         navigateToChat={navigateToChatList}
                     />
-                    
-                    {/* WebRTC Test Component - Add this for testing */}
                 </div>
             );
     }

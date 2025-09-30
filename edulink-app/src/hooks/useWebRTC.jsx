@@ -205,40 +205,44 @@ export const useWebRTC = (user) => {
             };
             
             const stream = await getUserMedia(constraints);
-            if (!stream) {
-                declineCall(incomingCall);
-                return;
-            }
-
+            
+            // Create peer connection
             const pc = createPeerConnection();
-            peerConnectionRef.current = pc;
-
-            addTracksToPC(pc, stream);
-
+            peerConnection.current = pc;
+            
+            // Add tracks
+            stream.getTracks().forEach(track => {
+                console.log('➕ Adding track for answer:', track.kind);
+                pc.addTrack(track, stream);
+            });
+            
+            // Set remote description (offer)
+            console.log('📥 Setting remote description (offer)');
             await pc.setRemoteDescription(new RTCSessionDescription(incomingCall.offer));
             
+            // Add any pending ICE candidates
+            for (const candidate of pendingCandidates.current) {
+                console.log('🧊 Adding pending candidate');
+                await pc.addIceCandidate(new RTCIceCandidate(candidate));
+            }
+            pendingCandidates.current = [];
+            
+            // Create answer
+            console.log('📝 Creating answer...');
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
-
-            const callData = {
-                callId: callId.current,
-                callerId: incomingCall.callerId,
-                targetUserId: incomingCall.targetUserId,
-                conversationId: incomingCall.conversationId,
-                type: incomingCall.type,
-                answer
-            };
-
-            setCurrentCall(callData);
-            setIncomingCall(null);
-
+            console.log('✅ Local description set (answer)');
+            
+            // Send answer
             socket.emit('webrtc:call-answer', {
                 callId: callId.current,
                 answer,
                 targetUserId: incomingCall.callerId
             });
             
+            setIncomingCall(null);
             console.log('✅ Call answered successfully');
+            
         } catch (error) {
             console.error('❌ Error answering call:', error);
             endCall();
@@ -246,7 +250,7 @@ export const useWebRTC = (user) => {
         }
     };
 
-    // Decline a call
+    // Decline incoming call
     const declineCall = () => {
         if (incomingCall) {
             console.log('❌ Declining call');

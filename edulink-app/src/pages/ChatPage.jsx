@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth.jsx';
 import { useSocket } from '../hooks/useSocket.jsx';
-import { useWebRTC } from '../hooks/useWebRTC.jsx';
+import { useWebRTCSimple } from '../hooks/useWebRTCSimple.jsx';
 import { apiCall } from '../config/api.js';
 import ChatSidebar from '../components/Chat/ChatSidebar';
 import ChatWindow from '../components/Chat/ChatWindow';
@@ -24,7 +24,7 @@ const ChatPage = ({ conversationId }) => {
         endCall,
         startCall,
         isScreenSharing
-    } = useWebRTC(socket, user);
+    } = useWebRTCSimple(user);
 
     const [conversations, setConversations] = useState([]);
     const [activeConversation, setActiveConversation] = useState(null);
@@ -231,7 +231,18 @@ const ChatPage = ({ conversationId }) => {
 
         const targetUser = activeConversation.participants.find(p => p.user_id !== user.id);
         if (targetUser) {
+            console.log(`📞 Initiating ${callType} call to ${targetUser.user_id}`);
+            
+            // First, caller joins the room and starts their media
             startCall(activeConversation.conversation_id, callType, targetUser.user_id);
+            
+            // Then notify the target user about incoming call
+            socket.emit('webrtc:initiate-call', {
+                conversationId: activeConversation.conversation_id,
+                targetUserId: targetUser.user_id,
+                callType: callType,
+                callerName: user.displayName || user.username
+            });
         }
     };
 
