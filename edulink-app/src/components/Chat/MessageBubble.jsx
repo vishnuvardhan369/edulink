@@ -45,6 +45,48 @@ const MessageBubble = ({ message, isOwn, user, socket }) => {
     };
 
     const renderMessageContent = () => {
+        // Handle call log messages (WhatsApp style)
+        if (message.message_type === 'call_log') {
+            const metadata = message.call_data || message.metadata || {};
+            const { callType, status, duration } = metadata;
+            
+            let icon, text, className;
+            
+            if (status === 'missed') {
+                icon = isOwn ? '📞' : '📵';
+                text = isOwn ? `Missed ${callType || 'audio'} call` : `You missed this ${callType || 'audio'} call`;
+                className = 'call-missed';
+            } else if (status === 'declined') {
+                icon = '❌';
+                text = `Declined ${callType || 'audio'} call`;
+                className = 'call-declined';
+            } else if (status === 'ended' && duration) {
+                icon = callType === 'video' ? '📹' : '📞';
+                const formatDuration = (secs) => {
+                    const mins = Math.floor(secs / 60);
+                    const seconds = secs % 60;
+                    return `${mins}:${seconds.toString().padStart(2, '0')}`;
+                };
+                text = `${callType || 'audio'} call (${formatDuration(duration)})`;
+                className = 'call-ended';
+            } else if (status === 'answered') {
+                icon = callType === 'video' ? '📹' : '📞';
+                text = `${callType || 'audio'} call started`;
+                className = 'call-answered';
+            } else {
+                icon = '📞';
+                text = message.content || 'Call';
+                className = 'call-log';
+            }
+            
+            return (
+                <div className={`call-log-message ${className}`}>
+                    <span className="call-icon">{icon}</span>
+                    <span className="call-text">{text}</span>
+                </div>
+            );
+        }
+        
         if (message.message_type === 'text') {
             return <div className="message-text">{message.message_text}</div>;
         } else if (message.message_type === 'image') {

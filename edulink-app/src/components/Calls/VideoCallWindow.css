@@ -18,13 +18,36 @@
 }
 
 .video-call-window.fullscreen {
-    width: 100vw;
-    height: 100vh;
-    top: 0;
-    left: 0;
-    transform: none;
-    border-radius: 0;
-    max-width: none;
+    width: 100vw !important;
+    height: 100vh !important;
+    top: 0 !important;
+    left: 0 !important;
+    transform: none !important;
+    border-radius: 0 !important;
+    max-width: none !important;
+    max-height: none !important;
+}
+
+/* Fullscreen API support */
+.video-call-window:fullscreen {
+    width: 100vw !important;
+    height: 100vh !important;
+    max-width: none !important;
+    max-height: none !important;
+}
+
+.video-call-window:-webkit-full-screen {
+    width: 100vw !important;
+    height: 100vh !important;
+    max-width: none !important;
+    max-height: none !important;
+}
+
+.video-call-window:-moz-full-screen {
+    width: 100vw !important;
+    height: 100vh !important;
+    max-width: none !important;
+    max-height: none !important;
 }
 
 .call-header {
@@ -119,6 +142,19 @@
     flex-direction: column;
     align-items: center;
     gap: 30px;
+}
+
+.audio-call-avatar .audio-connected {
+    color: #4CAF50;
+    font-size: 16px;
+    font-weight: 600;
+    margin-top: 10px;
+    animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
 }
 
 .avatar-circle.extra-large {

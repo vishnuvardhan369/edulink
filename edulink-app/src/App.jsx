@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { initializeApp } from 'firebase/app';
 import { getAuth, onAuthStateChanged, signOut } from 'firebase/auth';
 import { apiCall } from './config/api';
@@ -17,7 +17,11 @@ import SearchPage from './pages/SearchPage';
 import NotificationsPage from './pages/NotificationsPage';
 import ChatPage from './pages/ChatPage';
 import ChatListPage from './pages/ChatListPage';
+import PostPage from './pages/PostPage';
+import PollPage from './pages/PollPage';
+import MeetCallPage from './pages/MeetCallPage';
 import CallModal from './components/Calls/CallModal';
+import RandomMeet from './components/RandomMeet';
 
 // --- Firebase Config ---
 const firebaseConfig = {
@@ -33,13 +37,14 @@ const firebaseConfig = {
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 
-// --- Main App Component ---
-export default function App() {
+// Main App Component with Router Logic
+function AppContent() {
     const [user, setUser] = React.useState(null);
     const [loading, setLoading] = React.useState(true);
     const [userData, setUserData] = React.useState(null);
-    const [currentPage, setCurrentPage] = React.useState({ page: 'home', profileId: null });
     const [incomingCall, setIncomingCall] = React.useState(null);
+    const navigate = useNavigate();
+    const location = useLocation();
     
     // App-level socket connection
     const { socket, isConnected } = useSocket();
@@ -110,24 +115,19 @@ export default function App() {
                 console.log('✅ Successfully joined notifications:', data);
             });
             
-            // Listen for incoming calls
-            socket.on('call:incoming', (callData) => {
-                console.log('🔔 Incoming call received:', callData);
+            // Listen for incoming calls (WebRTC event)
+            socket.on('webrtc:incoming-call', (callData) => {
+                console.log('🔔 Incoming call received (App.jsx):', callData);
                 setIncomingCall(callData);
             });
             
             // Listen for call status updates
-            socket.on('call:answered', (data) => {
-                console.log('📞 Call answered:', data);
-                setIncomingCall(null);
-            });
-            
-            socket.on('call:declined', (data) => {
+            socket.on('webrtc:call-decline', (data) => {
                 console.log('📞 Call declined:', data);
                 setIncomingCall(null);
             });
             
-            socket.on('call:ended', (data) => {
+            socket.on('webrtc:call-ended', (data) => {
                 console.log('📞 Call ended:', data);
                 setIncomingCall(null);
             });
@@ -146,10 +146,9 @@ export default function App() {
             return () => {
                 if (socket) {
                     socket.off('user:joined');
-                    socket.off('call:incoming');
-                    socket.off('call:answered');
-                    socket.off('call:declined');
-                    socket.off('call:ended');
+                    socket.off('webrtc:incoming-call');
+                    socket.off('webrtc:call-decline');
+                    socket.off('webrtc:call-ended');
                     socket.off('error');
                     socket.off('test:received');
                 }
@@ -189,20 +188,10 @@ export default function App() {
             // Clear incoming call immediately to prevent duplicate answers
             setIncomingCall(null);
             
-            // Emit call answer event with proper data
-            socket.emit('call:answer', { 
-                callId: currentCall.callId,
-                conversationId: currentCall.conversationId,
-                callerId: currentCall.callerId,
-                answererId: user.uid,
-                signal: null // WebRTC signal will be handled by useWebRTC hook
-            });
-            
-            // Navigate to chat page for the call
-            setCurrentPage({ 
-                page: 'chat', 
-                conversationId: currentCall.conversationId 
-            });
+            // Navigate to chat page - the ChatPage will handle accepting the call
+            // Store the call data in sessionStorage so ChatPage can pick it up
+            sessionStorage.setItem('pendingCall', JSON.stringify(currentCall));
+            navigate(`/chat/${currentCall.conversationId}`);
             
         } else {
             console.error('❌ Cannot answer call - socket not connected or missing call data');
@@ -219,12 +208,14 @@ export default function App() {
             // Clear incoming call immediately
             setIncomingCall(null);
             
-            socket.emit('call:decline', { 
+            socket.emit('webrtc:call-decline', { 
                 callId: currentCall.callId,
                 conversationId: currentCall.conversationId,
-                callerId: currentCall.callerId,
-                userId: user.uid 
+                targetUserId: currentCall.callerId,
+                userId: user.uid
             });
+            
+            console.log('✅ Decline event sent with callId:', currentCall.callId);
             
         } else {
             console.error('❌ Cannot decline call - socket not connected or missing call data');
@@ -236,76 +227,56 @@ export default function App() {
             socket.disconnect();
         }
         await signOut(auth);
-        setCurrentPage({ page: 'home', profileId: null });
-    };    
-    // --- NAVIGATION FUNCTIONS ---
-    const navigateToProfile = (profileId) => setCurrentPage({ page: 'profile', profileId: profileId });
-    const navigateToHome = () => setCurrentPage({ page: 'home', profileId: null });
-    const navigateToSearch = () => setCurrentPage({ page: 'search', profileId: null });
-    const navigateToNotifications = () => setCurrentPage({ page: 'notifications', profileId: null });
-    const navigateToChat = () => setCurrentPage({ page: 'chat', profileId: null });
-    const navigateToChatList = () => setCurrentPage({ page: 'chat-list', profileId: null });
-
-const renderPage = () => {
-    switch (currentPage.page) {
-        case 'search':
-            return <SearchPage navigateToProfile={navigateToProfile} navigateToHome={navigateToHome} />;
-        case 'profile':
-            return <ProfilePage
-                viewingProfileId={currentPage.profileId}
-                currentUserData={userData}
-                navigateToHome={navigateToHome}
-                onProfileUpdate={() => fetchCurrentUserData(user)}
-            />;
-        case 'notifications':
-            return <NotificationsPage
-                currentUserData={userData}
-                navigateToProfile={navigateToProfile}
-                navigateToHome={navigateToHome}
-                onUpdate={() => fetchCurrentUserData(user)}
-            />;
-        case 'chat':
-            return <ChatPage conversationId={currentPage.conversationId} />;
-        case 'chat-list':
-            return <ChatListPage 
-                navigateToChat={(conversationId) => {
-                    setCurrentPage({ page: 'chat', conversationId });
-                }}
-                navigateToHome={navigateToHome}
-            />;
-        default:
-            return (
-                <div style={{
-                    display: "flex",
-                    justifyContent: "center",
-                    alignItems: "center",
-                    minHeight: "100vh"
-                }}>
-                    <HomePage
-                        userData={userData}
-                        onSignOut={handleSignOut}
-                        navigateToProfile={navigateToProfile}
-                        navigateToSearch={navigateToSearch}
-                        navigateToNotifications={navigateToNotifications}
-                        navigateToChat={navigateToChatList}
-                    />
-                </div>
-            );
-    }
-};
-
+        navigate('/');
+    };
 
     // --- MAIN RENDER LOGIC ---
     if (loading) return <div>Loading...</div>;
-    if (!user) return <AuthPage />;
-    if (!user.emailVerified) return <EmailVerificationPage user={user} />;
-    if (!userData) return <UsernameSelectionPage user={user} onUsernameSet={() => fetchCurrentUserData(user)} />;
     
     return (
-        <AuthProvider>
-            <Router>
-                {renderPage()}
-            </Router>
+        <>
+            <Routes>
+                {/* Public Routes - accessible without authentication */}
+                <Route path="/post/:postId" element={<PostPage />} />
+                <Route path="/poll/:pollId" element={<PollPage />} />
+                
+                {/* Protected Routes - require authentication */}
+                {!user ? (
+                    <Route path="*" element={<AuthPage />} />
+                ) : !user.emailVerified ? (
+                    <Route path="*" element={<EmailVerificationPage user={user} />} />
+                ) : !userData ? (
+                    <Route path="*" element={<UsernameSelectionPage user={user} onUsernameSet={() => fetchCurrentUserData(user)} />} />
+                ) : (
+                    <>
+                        <Route path="/" element={
+                            <HomePage
+                                userData={userData}
+                                onSignOut={handleSignOut}
+                            />
+                        } />
+                        <Route path="/profile/:userId?" element={
+                            <ProfilePage
+                                currentUserData={userData}
+                                onProfileUpdate={() => fetchCurrentUserData(user)}
+                            />
+                        } />
+                        <Route path="/search" element={<SearchPage />} />
+                        <Route path="/notifications" element={
+                            <NotificationsPage
+                                currentUserData={userData}
+                                onUpdate={() => fetchCurrentUserData(user)}
+                            />
+                        } />
+                        <Route path="/chat" element={<ChatListPage />} />
+                        <Route path="/chat/:conversationId" element={<ChatPage />} />
+                        <Route path="/meet" element={<RandomMeet />} />
+                        <Route path="/meet-call" element={<MeetCallPage />} />
+                        <Route path="*" element={<Navigate to="/" replace />} />
+                    </>
+                )}
+            </Routes>
+            
             {/* Global Call Notification Modal */}
             {incomingCall && (
                 <CallModal 
@@ -314,6 +285,17 @@ const renderPage = () => {
                     onDecline={handleDeclineCall}
                 />
             )}
+        </>
+    );
+}
+
+// Main App wrapper with Router
+export default function App() {
+    return (
+        <AuthProvider>
+            <Router>
+                <AppContent />
+            </Router>
         </AuthProvider>
     );
 }

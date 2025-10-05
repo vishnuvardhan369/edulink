@@ -218,6 +218,64 @@
     border-color: rgba(0, 122, 255, 0.3);
 }
 
+/* Call Log Messages (WhatsApp Style) */
+.call-log-message {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 12px;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.call-icon {
+    font-size: 18px;
+    display: flex;
+    align-items: center;
+}
+
+.call-text {
+    flex: 1;
+}
+
+/* Call status colors */
+.call-missed {
+    color: #ff3b30;
+    background: rgba(255, 59, 48, 0.1);
+}
+
+.call-declined {
+    color: #ff3b30;
+    background: rgba(255, 59, 48, 0.1);
+}
+
+.call-answered,
+.call-ended {
+    color: #34c759;
+    background: rgba(52, 199, 89, 0.1);
+}
+
+.call-log {
+    color: #8e8e93;
+    background: rgba(142, 142, 147, 0.1);
+}
+
+/* Override for own messages */
+.own-message .call-log-message {
+    background: rgba(0, 122, 255, 0.1);
+}
+
+.own-message .call-missed,
+.own-message .call-declined {
+    background: rgba(255, 59, 48, 0.15);
+}
+
+.own-message .call-answered,
+.own-message .call-ended {
+    background: rgba(52, 199, 89, 0.15);
+}
+
 /* Responsive Design */
 @media (max-width: 768px) {
     .message-content {
@@ -235,5 +293,14 @@
     
     .message-file {
         min-width: 150px;
+    }
+    
+    .call-log-message {
+        font-size: 13px;
+        padding: 6px 10px;
+    }
+    
+    .call-icon {
+        font-size: 16px;
     }
 }

@@ -1,4 +1,5 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { apiCall } from '../config/api';
 
 function useDebounce(value, delay) {
@@ -10,7 +11,8 @@ function useDebounce(value, delay) {
     return debouncedValue;
 }
 
-export default function SearchPage({ navigateToProfile, navigateToHome }) {
+export default function SearchPage() {
+    const navigate = useNavigate();
     const [query, setQuery] = React.useState('');
     const [results, setResults] = React.useState([]);
     const [loading, setLoading] = React.useState(false);
@@ -38,7 +40,7 @@ export default function SearchPage({ navigateToProfile, navigateToHome }) {
 
     return (
         <div style={{ padding: '20px', maxWidth: '700px', margin: 'auto' }}>
-            <button onClick={navigateToHome}>&larr; Back to Home</button>
+            <button onClick={() => navigate('/')}>&larr; Back to Home</button>
             <h2>Search for Users</h2>
             <div style={{ marginBottom: '20px' }}>
                 <input
@@ -54,7 +56,7 @@ export default function SearchPage({ navigateToProfile, navigateToHome }) {
 
             <div>
                 {results.map(user => (
-                    <div key={user.id} onClick={() => navigateToProfile(user.id)} style={{ display: 'flex', alignItems: 'center', gap: '15px', padding: '10px', cursor: 'pointer', borderBottom: '1px solid #eee' }}>
+                    <div key={user.id} onClick={() => navigate(`/profile/${user.id}`)} style={{ display: 'flex', alignItems: 'center', gap: '15px', padding: '10px', cursor: 'pointer', borderBottom: '1px solid #eee' }}>
                         <img src={user.profilePictureUrl} alt={user.displayName} style={{ width: 50, height: 50, borderRadius: '50%' }} />
                         <div>
                             <p style={{ margin: 0, fontWeight: 'bold' }}>{user.displayName}</p>

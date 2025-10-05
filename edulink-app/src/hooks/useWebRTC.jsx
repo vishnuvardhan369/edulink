@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSocket } from './useSocket';
+import { API_BASE_URL } from '../config/api';
 
 export const useWebRTC = (user) => {
     const [localStream, setLocalStream] = useState(null);
@@ -8,6 +9,7 @@ export const useWebRTC = (user) => {
     const [callType, setCallType] = useState(null);
     const [incomingCall, setIncomingCall] = useState(null);
     const [isConnecting, setIsConnecting] = useState(false);
+    const [rtcConfig, setRtcConfig] = useState(null);
     
     const { socket } = useSocket();
     const peerConnection = useRef(null);
@@ -16,22 +18,35 @@ export const useWebRTC = (user) => {
     const callId = useRef(null);
     const targetUser = useRef(null);
 
-    // WebRTC Configuration with TURN server
-    const rtcConfig = {
-        iceServers: [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' },
-            {
-                urls: 'turn:relay1.expressturn.com:3480',
-                username: '000000002074484908',
-                credential: 'iaB6fUMYHcn1weCZ6t7s8e8h5gY='
+    // Fetch TURN credentials from backend on mount
+    useEffect(() => {
+        const fetchTurnCredentials = async () => {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/turn-credentials`);
+                const config = await response.json();
+                console.log('🔐 TURN credentials fetched from backend');
+                setRtcConfig(config);
+            } catch (error) {
+                console.error('❌ Failed to fetch TURN credentials:', error);
+                // Fallback to STUN-only configuration
+                setRtcConfig({
+                    iceServers: [
+                        { urls: 'stun:stun.l.google.com:19302' },
+                        { urls: 'stun:stun1.l.google.com:19302' }
+                    ],
+                    iceCandidatePoolSize: 10
+                });
             }
-        ],
-        iceCandidatePoolSize: 10
-    };
+        };
+        fetchTurnCredentials();
+    }, []);
 
     // Create peer connection
     const createPeerConnection = useCallback(() => {
+        if (!rtcConfig) {
+            console.warn('⚠️ RTC config not yet loaded');
+            return null;
+        }
         console.log('🔗 Creating peer connection with TURN server');
         const pc = new RTCPeerConnection(rtcConfig);
         
@@ -71,7 +86,7 @@ export const useWebRTC = (user) => {
         };
         
         return pc;
-    }, [socket]);
+    }, [socket, rtcConfig]);
 
     // Get user media
     const getUserMedia = async (constraints) => {

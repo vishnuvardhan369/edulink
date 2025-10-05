@@ -1,8 +1,10 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { auth } from '../App';
 import { apiCall } from '../config/api';
 
-export default function Poll({ poll, onPollUpdate, navigateToProfile }) {
+export default function Poll({ poll, onPollUpdate, isPublicView = false }) {
+    const navigate = useNavigate();
     const [userVotes, setUserVotes] = React.useState([]);
     const [isVoting, setIsVoting] = React.useState(false);
     const [showResults, setShowResults] = React.useState(false);
@@ -19,6 +21,23 @@ export default function Poll({ poll, onPollUpdate, navigateToProfile }) {
     
     // Calculate total votes
     const totalVotes = poll.options.reduce((sum, option) => sum + option.votes, 0);
+    
+    // Share function
+    const handleShare = async () => {
+        const pollUrl = `${window.location.origin}/poll/${poll.id}`;
+        const shareData = {
+            title: `Check out this poll on EduLink!`,
+            text: poll.question,
+            url: pollUrl,
+        };
+        try {
+            if (navigator.share) await navigator.share(shareData);
+            else {
+                navigator.clipboard.writeText(shareData.url);
+                alert('Link copied to clipboard!');
+            }
+        } catch (err) { console.error('Error sharing:', err); }
+    };
     
     React.useEffect(() => {
         // Initialize user votes if they've already voted
@@ -158,7 +177,7 @@ export default function Poll({ poll, onPollUpdate, navigateToProfile }) {
                 <div className="d-flex align-items-center justify-content-between">
                     <div 
                         className="d-flex align-items-center gap-3"
-                        onClick={() => navigateToProfile && navigateToProfile(poll.userId)}
+                        onClick={() => navigate(`/profile/${poll.userId}`)}
                         style={{ cursor: 'pointer' }}
                     >
                         <div className="avatar">
@@ -193,15 +212,16 @@ export default function Poll({ poll, onPollUpdate, navigateToProfile }) {
                         return (
                             <div key={option.optionId} className="poll-option">
                                 {!showResults && !isExpired ? (
-                                    <label className={`poll-option-label ${isSelected ? 'selected' : ''}`}>
+                                    <label className={`poll-option-label ${isSelected ? 'selected' : ''} ${isPublicView ? 'disabled' : ''}`}>
                                         <input
                                             type={poll.allowMultipleVotes ? 'checkbox' : 'radio'}
                                             name={`poll-${poll.id}`}
                                             checked={isSelected}
-                                            onChange={() => handleVoteChange(option.optionId)}
-                                            disabled={isVoting}
+                                            onChange={isPublicView ? () => alert('Please sign up to vote!') : () => handleVoteChange(option.optionId)}
+                                            disabled={isVoting || isPublicView}
                                         />
                                         <span className="poll-option-text">{option.text}</span>
+                                        {isPublicView && <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginLeft: 'auto' }}>Sign up to vote</span>}
                                     </label>
                                 ) : (
                                     <div className="poll-option-result">
@@ -224,7 +244,7 @@ export default function Poll({ poll, onPollUpdate, navigateToProfile }) {
                     })}
                 </div>
                 
-                {!showResults && !isExpired && (
+                {!showResults && !isExpired && !isPublicView && (
                     <div className="poll-actions">
                         <button 
                             className="btn btn-primary"
@@ -266,6 +286,17 @@ export default function Poll({ poll, onPollUpdate, navigateToProfile }) {
                         </button>
                     )}
                 </div>
+            </div>
+            
+            {/* Poll Action Buttons (Like, Comment, Share) */}
+            <div className="post-actions">
+                <button 
+                    onClick={handleShare} 
+                    className="post-action"
+                >
+                    <span>📤</span>
+                    Share
+                </button>
             </div>
         </div>
     );

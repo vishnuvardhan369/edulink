@@ -1,8 +1,10 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { auth } from '../App';
 import { apiCall } from '../config/api';
 
-export default function NotificationsPage({ currentUserData, navigateToProfile, navigateToHome, onUpdate }) {
+export default function NotificationsPage({ currentUserData, onUpdate }) {
+    const navigate = useNavigate();
     const [notifications, setNotifications] = React.useState([]);
     const [loading, setLoading] = React.useState(true);
 
@@ -82,7 +84,7 @@ export default function NotificationsPage({ currentUserData, navigateToProfile, 
 
     return (
         <div style={{ padding: '20px', maxWidth: '700px', margin: 'auto' }}>
-            <button onClick={navigateToHome}>&larr; Back to Home</button>
+            <button onClick={() => navigate('/')}>&larr; Back to Home</button>
             <h2 style={{marginTop: '20px'}}>Notifications</h2>
             
             {loading && <p>Loading notifications...</p>}

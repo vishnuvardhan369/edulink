@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth.jsx';
 import { useSocket } from '../hooks/useSocket.jsx';
 import { useWebRTCSimple } from '../hooks/useWebRTCSimple.jsx';
@@ -10,10 +10,31 @@ import CallModal from '../components/Calls/CallModal';
 import VideoCallWindow from '../components/Calls/VideoCallWindow';
 import './ChatPage.css';
 
-const ChatPage = ({ conversationId }) => {
+const ChatPage = () => {
+    const { conversationId } = useParams();
     const { user } = useAuth();
     const navigate = useNavigate();
+    const location = useLocation();
     const { socket, isConnected } = useSocket();
+    
+    // Check for pending call from App.jsx
+    const [pendingCall, setPendingCall] = useState(null);
+    
+    useEffect(() => {
+        const pendingCallStr = sessionStorage.getItem('pendingCall');
+        if (pendingCallStr) {
+            try {
+                const call = JSON.parse(pendingCallStr);
+                console.log('📞 ChatPage found pending call:', call);
+                setPendingCall(call);
+                sessionStorage.removeItem('pendingCall');
+            } catch (error) {
+                console.error('❌ Error parsing pending call:', error);
+                sessionStorage.removeItem('pendingCall');
+            }
+        }
+    }, []);
+    
     const { 
         incomingCall, 
         currentCall, 
@@ -24,13 +45,39 @@ const ChatPage = ({ conversationId }) => {
         endCall,
         startCall,
         isScreenSharing
-    } = useWebRTCSimple(user);
+    } = useWebRTCSimple(user, pendingCall);
 
     const [conversations, setConversations] = useState([]);
     const [activeConversation, setActiveConversation] = useState(null);
     const [messages, setMessages] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showNewChat, setShowNewChat] = useState(false);
+    
+    // Handle Meet calls from RandomMeet component
+    useEffect(() => {
+        if (!socket || !user) return;
+        
+        const state = location.state;
+        if (state?.startMeetCall && state?.meetData) {
+            const meetData = state.meetData;
+            console.log('🎲 Starting Meet call:', meetData);
+            
+            // Start the call as initiator
+            startCall(meetData.roomId, meetData.callType, meetData.partnerId, true);
+            
+            // Clear the location state
+            navigate(location.pathname, { replace: true, state: {} });
+        } else if (state?.acceptMeetCall && state?.meetData) {
+            const meetData = state.meetData;
+            console.log('🎲 Accepting Meet call:', meetData);
+            
+            // Join the call as receiver
+            startCall(meetData.roomId, meetData.callType, meetData.partnerId, false);
+            
+            // Clear the location state
+            navigate(location.pathname, { replace: true, state: {} });
+        }
+    }, [location.state, socket, user, startCall, navigate, location.pathname]);
 
     useEffect(() => {
         if (!user) {
@@ -76,6 +123,24 @@ const ChatPage = ({ conversationId }) => {
         }
     }, [conversationId, conversations]);
 
+    // Auto-answer pending call when conversation is loaded
+    useEffect(() => {
+        if (pendingCall && activeConversation && incomingCall) {
+            console.log('📞 Auto-answering pending call');
+            console.log('- pendingCall:', pendingCall);
+            console.log('- activeConversation:', activeConversation.conversation_id);
+            console.log('- incomingCall:', incomingCall);
+            
+            if (pendingCall.conversationId === activeConversation.conversation_id) {
+                // Small delay to ensure everything is ready
+                setTimeout(() => {
+                    console.log('✅ Calling answerCall()');
+                    answerCall();
+                }, 500);
+            }
+        }
+    }, [pendingCall, activeConversation, incomingCall, answerCall]);
+
     const loadConversations = async () => {
         try {
             const response = await apiCall(`/api/chats?userId=${user.id}`);
@@ -106,7 +171,15 @@ const ChatPage = ({ conversationId }) => {
 
     const handleNewMessage = (message) => {
         if (activeConversation && message.conversation_id === activeConversation.conversation_id) {
-            setMessages(prev => [...prev, message]);
+            // Check for duplicates before adding
+            setMessages(prev => {
+                const exists = prev.some(msg => msg.message_id === message.message_id);
+                if (exists) {
+                    console.log('Duplicate message detected, skipping:', message.message_id);
+                    return prev;
+                }
+                return [...prev, message];
+            });
         }
         
         // Update conversation list with latest message
@@ -292,6 +365,7 @@ const ChatPage = ({ conversationId }) => {
                     remoteStream={remoteStream}
                     onEndCall={endCall}
                     user={user}
+                    socket={socket}
                 />
             )}
 

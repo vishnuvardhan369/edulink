@@ -11,7 +11,9 @@ export default defineConfig({
   server: {
     port: 5173,
     host: '0.0.0.0', // Allow access from network devices
-    cors: true
+    cors: true,
+    // Enable history API fallback for client-side routing
+    historyApiFallback: true
   },
   build: {
     outDir: 'dist',

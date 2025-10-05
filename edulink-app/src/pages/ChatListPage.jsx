@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth.jsx';
 import { apiCall } from '../config/api';
 import './ChatListPage.css';
 
-const ChatListPage = ({ navigateToChat, navigateToHome }) => {
+const ChatListPage = () => {
     const { user } = useAuth();
+    const navigate = useNavigate();
     const [conversations, setConversations] = useState([]);
     const [searchResults, setSearchResults] = useState([]);
     const [missedCalls, setMissedCalls] = useState([]);
@@ -99,7 +101,7 @@ const ChatListPage = ({ navigateToChat, navigateToHome }) => {
 
             if (existingConv) {
                 // Navigate to existing conversation
-                navigateToChat(existingConv.conversation_id);
+                navigate(`/chat/${existingConv.conversation_id}`);
                 return;
             }
 
@@ -116,7 +118,7 @@ const ChatListPage = ({ navigateToChat, navigateToHome }) => {
 
             if (response.ok) {
                 const newConversation = await response.json();
-                navigateToChat(newConversation.conversation_id);
+                navigate(`/chat/${newConversation.conversation_id}`);
                 // Refresh conversations list
                 loadConversations();
             }
@@ -168,7 +170,7 @@ const ChatListPage = ({ navigateToChat, navigateToHome }) => {
     return (
         <div className="chat-list-page">
             <div className="chat-list-header">
-                <button onClick={navigateToHome} className="back-button">
+                <button onClick={() => navigate('/')} className="back-button">
                     ← Back to Home
                 </button>
                 <h2>Messages</h2>
@@ -231,7 +233,7 @@ const ChatListPage = ({ navigateToChat, navigateToHome }) => {
                                         <div
                                             key={conversation.conversation_id}
                                             className="conversation-item"
-                                            onClick={() => navigateToChat(conversation.conversation_id)}
+                                            onClick={() => navigate(`/chat/${conversation.conversation_id}`)}
                                         >
                                             <div className="conversation-avatar">
                                                 <div className="avatar-circle">
@@ -351,7 +353,7 @@ const ChatListPage = ({ navigateToChat, navigateToHome }) => {
                                                         c => c.participants?.some(p => p.id === call.caller_id)
                                                     );
                                                     if (existingConvo) {
-                                                        navigateToChat(existingConvo.id);
+                                                        navigate(`/chat/${existingConvo.id}`);
                                                     } else {
                                                         // Create new conversation
                                                         startConversation({

@@ -1,4 +1,5 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { auth } from '../App';
 import { apiCall } from '../config/api';
 
@@ -14,8 +15,9 @@ function formatTimestamp(timestamp) {
     });
 }
 
-function PostHeader({ userId, timestamp, navigateToProfile }) {
+function PostHeader({ userId, timestamp }) {
     const [author, setAuthor] = React.useState(null);
+    const navigate = useNavigate();
     React.useEffect(() => {
         const fetchAuthor = async () => {
             if (!userId) return;
@@ -35,7 +37,7 @@ function PostHeader({ userId, timestamp, navigateToProfile }) {
     if (!author) return <div className="loading" style={{height: '50px'}}></div>;
     
     return (
-        <div onClick={() => navigateToProfile(userId)} 
+        <div onClick={() => navigate(`/profile/${userId}`)} 
              className="post-author-container" 
              style={{ cursor: 'pointer', transition: 'all 0.2s ease' }}
              onMouseEnter={(e) => e.target.style.opacity = '0.8'}
@@ -53,7 +55,8 @@ function PostHeader({ userId, timestamp, navigateToProfile }) {
     );
 }
 
-function Comment({ comment, navigateToProfile, onCommentDelete, currentUserId }) {
+function Comment({ comment, onCommentDelete, currentUserId }) {
+    const navigate = useNavigate();
     const isCommentAuthor = currentUserId === comment.userId;
     
     const handleDeleteComment = async () => {
@@ -106,7 +109,7 @@ function Comment({ comment, navigateToProfile, onCommentDelete, currentUserId })
                     &times;
                 </button>
             )}
-            <PostHeader userId={comment.userId} timestamp={comment.createdAt} navigateToProfile={navigateToProfile} />
+            <PostHeader userId={comment.userId} timestamp={comment.createdAt} />
             <p style={{
                 marginLeft: '50px', 
                 marginTop: 'var(--spacing-xs)', 
@@ -120,7 +123,7 @@ function Comment({ comment, navigateToProfile, onCommentDelete, currentUserId })
     );
 }
 
-export default function Post({ post, onPostUpdate, onPostDelete, navigateToProfile }) { // Added onPostDelete prop
+export default function Post({ post, onPostUpdate, onPostDelete, isPublicView = false }) { // Added onPostDelete prop
     const [commentText, setCommentText] = React.useState('');
     const [showComments, setShowComments] = React.useState(false);
     const currentUser = auth.currentUser;
@@ -187,10 +190,11 @@ export default function Post({ post, onPostUpdate, onPostDelete, navigateToProfi
     };
     
     const handleShare = async () => {
+        const postUrl = `${window.location.origin}/post/${post.id}`;
         const shareData = {
             title: `Check out this post on EduLink!`,
             text: post.description,
-            url: window.location.href,
+            url: postUrl,
         };
         try {
             if (navigator.share) await navigator.share(shareData);
@@ -297,7 +301,7 @@ export default function Post({ post, onPostUpdate, onPostDelete, navigateToProfi
 
             {/* Post Header */}
             <div className="post-header">
-                <PostHeader userId={post.userId} timestamp={post.createdAt} navigateToProfile={navigateToProfile} />
+                <PostHeader userId={post.userId} timestamp={post.createdAt} />
             </div>
             
             {/* Post Content */}
@@ -338,15 +342,19 @@ export default function Post({ post, onPostUpdate, onPostDelete, navigateToProfi
             {/* Post Actions */}
             <div className="post-actions">
                 <button 
-                    onClick={handleLike} 
+                    onClick={isPublicView ? () => alert('Please sign up to like posts!') : handleLike} 
                     className={`post-action ${hasLiked ? 'liked' : ''}`}
+                    disabled={isPublicView}
+                    style={isPublicView ? { opacity: 0.6, cursor: 'not-allowed' } : {}}
                 >
                     <span>{hasLiked ? '❤️' : '🤍'}</span>
                     Like
                 </button>
                 <button 
-                    onClick={() => setShowComments(!showComments)} 
+                    onClick={isPublicView ? () => alert('Please sign up to comment!') : () => setShowComments(!showComments)} 
                     className="post-action"
+                    disabled={isPublicView}
+                    style={isPublicView ? { opacity: 0.6, cursor: 'not-allowed' } : {}}
                 >
                     <span>💬</span>
                     Comment
@@ -363,25 +371,26 @@ export default function Post({ post, onPostUpdate, onPostDelete, navigateToProfi
             {/* Comments Section */}
             {showComments && (
                 <div className="card-footer">
-                    <form onSubmit={handleCommentSubmit} className="d-flex gap-2 mb-3">
-                        <input 
-                            type="text" 
-                            value={commentText} 
-                            onChange={(e) => setCommentText(e.target.value)} 
-                            placeholder="Write a comment..." 
-                            className="form-control"
+                    {!isPublicView && (
+                        <form onSubmit={handleCommentSubmit} className="d-flex gap-2 mb-3">
+                            <input 
+                                type="text" 
+                                value={commentText} 
+                                onChange={(e) => setCommentText(e.target.value)} 
+                                placeholder="Write a comment..." 
+                                className="form-control"
                             style={{flexGrow: 1}}
                         />
                         <button type="submit" className="btn btn-primary btn-sm">
                             Post
                         </button>
                     </form>
+                    )}
                     <div className="comments-list">
                         {comments.map((comment, index) => (
                             <Comment 
                                 key={comment.commentId || comment.id || index} 
                                 comment={comment} 
-                                navigateToProfile={navigateToProfile}
                                 onCommentDelete={handleCommentDelete}
                                 currentUserId={currentUser?.uid}
                             />

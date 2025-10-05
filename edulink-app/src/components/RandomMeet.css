@@ -1,0 +1,181 @@
+/* Simple Floating Dice Button - Bottom Right Corner */
+.floating-dice-button {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    border: none;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+    transition: all 0.3s ease;
+    z-index: 9999;
+}
+
+.floating-dice-button:hover {
+    transform: scale(1.1);
+    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+}
+
+.floating-dice-button:active {
+    transform: scale(1.05);
+}
+
+.dice-icon {
+    font-size: 28px;
+    animation: subtleRotate 3s ease-in-out infinite;
+}
+
+@keyframes subtleRotate {
+    0%, 100% {
+        transform: rotate(-5deg);
+    }
+    50% {
+        transform: rotate(5deg);
+    }
+}
+
+/* Searching State */
+.floating-dice-button.searching {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+}
+
+.searching-spinner {
+    width: 28px;
+    height: 28px;
+    border: 3px solid rgba(255, 255, 255, 0.3);
+    border-top: 3px solid white;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Pulse Animation for Attention */
+@keyframes pulse {
+    0%, 100% {
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+    }
+    50% {
+        box-shadow: 0 6px 25px rgba(102, 126, 234, 0.7);
+    }
+}
+
+.floating-dice-button:not(.searching) {
+    animation: pulse 3s infinite;
+}
+
+/* Call Overlay - Shows on top of current page */
+.meet-call-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--bg-primary);
+    z-index: 10000;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.meet-call-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px 24px;
+    background: var(--bg-card);
+    border-bottom: 1px solid var(--border-color);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.partner-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.partner-avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid var(--primary-color);
+}
+
+.partner-details h3 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.partner-details p {
+    margin: 0;
+    font-size: 14px;
+    color: var(--text-secondary);
+}
+
+.meet-badge {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: 600;
+    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .floating-dice-button {
+        bottom: 80px;
+        right: 16px;
+        width: 52px;
+        height: 52px;
+    }
+
+    .dice-icon {
+        font-size: 24px;
+    }
+
+    .searching-spinner {
+        width: 24px;
+        height: 24px;
+        border-width: 2px;
+    }
+
+    .meet-call-header {
+        padding: 16px;
+        flex-direction: column;
+        gap: 12px;
+        align-items: flex-start;
+    }
+
+    .partner-avatar {
+        width: 40px;
+        height: 40px;
+    }
+
+    .partner-details h3 {
+        font-size: 16px;
+    }
+
+    .partner-details p {
+        font-size: 12px;
+    }
+
+    .meet-badge {
+        font-size: 12px;
+        padding: 6px 12px;
+    }
+}

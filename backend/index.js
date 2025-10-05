@@ -212,6 +212,32 @@ app.get('/api/health/db', async (req, res) => {
     }
 });
 
+// TURN Server Credentials Endpoint (for WebRTC calls)
+app.get('/api/turn-credentials', (req, res) => {
+    try {
+        const turnConfig = {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' },
+                {
+                    urls: process.env.EXPRESSTURN_URL || 'turn:relay1.expressturn.com:3480',
+                    username: process.env.EXPRESSTURN_USERNAME,
+                    credential: process.env.EXPRESSTURN_PASSWORD
+                }
+            ],
+            iceCandidatePoolSize: 10
+        };
+        
+        console.log('🔐 TURN credentials requested');
+        res.status(200).json(turnConfig);
+    } catch (error) {
+        console.error('❌ Error fetching TURN credentials:', error);
+        res.status(500).json({
+            error: 'Failed to fetch TURN credentials'
+        });
+    }
+});
+
 const isDevelopment = process.env.NODE_ENV === 'development';
 const isAzure = !!process.env.WEBSITE_SITE_NAME;
 
@@ -228,6 +254,10 @@ app.get('/', (req, res) => res.send('EduLink Backend is running! v2.0 - DB Compa
 // Store active users for real-time features
 const activeUsers = new Map(); // userId -> { socketId, status, lastSeen }
 const activeRooms = new Map(); // conversationId -> Set of socketIds
+
+// Random Meet Feature
+const meetAvailableUsers = new Map(); // userId -> { socketId, username, displayName, profilePicture, meetEnabled }
+const meetQueue = []; // Array of userIds waiting for a match
 
 // Socket.IO Connection Handler with enhanced logging
 io.on('connection', (socket) => {
@@ -255,19 +285,24 @@ io.on('connection', (socket) => {
             // Handle both userId string and userData object for backward compatibility
             const userId = typeof userIdOrData === 'string' ? userIdOrData : userIdOrData.userId;
             const username = typeof userIdOrData === 'object' ? userIdOrData.username : null;
+            const displayName = typeof userIdOrData === 'object' ? userIdOrData.displayName : username;
+            const profilePicture = typeof userIdOrData === 'object' ? userIdOrData.profilePicture : null;
             
             socket.userId = userId;
             if (username) socket.username = username;
             
             // Join user to their personal room for notifications
             socket.join(userId);
-            console.log(`👤 User ${userId} joined their personal room`);
+            console.log(`👤 User ${userId} (${displayName || username}) joined their personal room`);
             
-            // Store active user
+            // Store active user with full display information for Meet feature
             activeUsers.set(userId, {
                 socketId: socket.id,
                 status: 'online',
-                lastSeen: new Date()
+                lastSeen: new Date(),
+                username: username || 'Anonymous',
+                displayName: displayName || username || 'Anonymous',
+                profilePicture: profilePicture
             });
 
             // Confirm successful join
@@ -277,8 +312,7 @@ io.on('connection', (socket) => {
                 message: 'Successfully connected to real-time notifications' 
             });
 
-            // Skip conversation room joining for now to avoid database issues
-            console.log(`✅ User ${userId} successfully joined and ready for notifications`);
+            console.log(`✅ User ${userId} successfully joined and ready for notifications + Meet`);
             
         } catch (error) {
             console.error('❌ Error in user:join:', error);
@@ -406,395 +440,13 @@ io.on('connection', (socket) => {
         }
     });
 
-    // WebRTC Signaling for Voice/Video Calls
-    socket.on('call:start', async (data) => {
-        const { conversationId, callType, targetUserId, signal } = data; // callType: 'audio', 'video', 'screen'
-        const callerId = socket.userId;
-
-        console.log(`🔥 CALL:START received:`, {
-            callerId,
-            targetUserId,
-            callType,
-            conversationId,
-            hasSignal: !!signal
-        });
-
-        if (!callerId) {
-            console.error('❌ No callerId found in socket');
-            return;
-        }
-
-        try {
-            // Create call log entry
-            const callId = uuidv4();
-            
-            // Use simple caller name for now (avoid database issues)
-            const callerName = `User ${callerId.substring(0, 8)}`;
-
-            console.log(`👤 Caller: ${callerName}`);
-            console.log(`🎯 Target user: ${targetUserId}`);
-            console.log(`👥 Active users:`, Array.from(activeUsers.keys()));
-
-            // Check if target user is online
-            const targetUser = activeUsers.get(targetUserId);
-            if (targetUser) {
-                // User is online - send real-time notification
-                console.log(`📞 Target user IS ONLINE - sending notification to room: ${targetUserId}`);
-
-                // Send to user's personal room (more reliable than socket ID)
-                console.log(`📤 Emitting call:incoming to room: ${targetUserId}`);
-                io.to(targetUserId).emit('call:incoming', {
-                    callId,
-                    callType,
-                    callerId,
-                    callerName,
-                    conversationId,
-                    signal
-                });
-                console.log(`✅ Call notification sent successfully`);
-                
-            } else {
-                // User is offline
-                console.log(`📵 Target user IS OFFLINE: ${targetUserId}`);
-                socket.emit('call:user_offline', { targetUserId });
-            }
-
-        } catch (error) {
-            console.error('❌ Error in call:start:', error);
-        }
-    });
-
-    // Test notification function
-    socket.on('test:notification', (data) => {
-        const { targetUserId, message } = data;
-        const senderId = socket.userId;
-        
-        console.log(`🧪 TEST NOTIFICATION:`, {
-            from: senderId,
-            to: targetUserId,
-            message
-        });
-        
-        // Send test notification to target user
-        io.to(targetUserId).emit('test:received', {
-            from: senderId,
-            message: message || 'Test notification!'
-        });
-        
-        console.log(`✅ Test notification sent to room: ${targetUserId}`);
-    });
-
-    // Track active calls to prevent duplicates
-    const activeCalls = new Map();
-    
-    socket.on('call:answer', async (data) => {
-        const { conversationId, callerId, signal, callId } = data;
-        const answererId = socket.userId;
-
-        console.log(`🔥 CALL:ANSWER received:`, {
-            callId,
-            callerId,
-            answererId,
-            conversationId,
-            hasSignal: !!signal,
-            signalType: signal?.type
-        });
-
-        if (!answererId) {
-            console.error('❌ No answererId found in socket');
-            return;
-        }
-
-        // Check if call was already answered
-        const callKey = `${callerId}-${conversationId}`;
-        if (activeCalls.has(callKey)) {
-            console.log('⚠️ Call already answered, ignoring duplicate');
-            return;
-        }
-        
-        // Mark call as answered
-        activeCalls.set(callKey, { answererId: answererId, timestamp: Date.now() });
-
-        try {
-            // Get caller's socket
-            const callerUser = activeUsers.get(callerId);
-            if (callerUser) {
-                console.log(`📞 Sending call:answered to caller: ${callerId}`);
-                console.log(`🔍 Signal being forwarded:`, { 
-                    hasSignal: !!signal, 
-                    signalType: signal?.type 
-                });
-                
-                // Send to caller's room with WebRTC signal if provided
-                io.to(callerId).emit('call:answered', {
-                    conversationId,
-                    answererId,
-                    callId,
-                    signal // Include WebRTC answer signal - THIS IS CRITICAL!
-                });
-
-                console.log(`✅ Call answered notification sent: ${callerId} <- ${answererId}`);
-                
-                // If there's a WebRTC signal, also send it via call:signal for redundancy
-                if (signal) {
-                    console.log(`📡 Also sending WebRTC signal via call:signal for redundancy`);
-                    io.to(callerId).emit('call:signal', {
-                        conversationId,
-                        senderId: answererId,
-                        signal
-                    });
-                }
-            } else {
-                console.log(`❌ Caller ${callerId} not found in active users`);
-            }
-        } catch (error) {
-            console.error('❌ Error in call:answer:', error);
-        }
-    });
-
-    // Handle WebRTC signaling
-    socket.on('call:signal', (data) => {
-        const { conversationId, targetUserId, signal } = data;
-        const senderId = socket.userId;
-        
-        console.log(`📡 WebRTC signal relay: ${senderId} -> ${targetUserId}`);
-        console.log(`📡 Signal type: ${signal.type || 'unknown'}`);
-        console.log(`🔍 Signal details:`, {
-            hasCandidate: !!signal.candidate,
-            candidateType: signal.candidate?.candidate,
-            sdpMLineIndex: signal.candidate?.sdpMLineIndex
-        });
-        
-        // Check if target user is online
-        const targetUser = activeUsers.get(targetUserId);
-        if (targetUser) {
-            console.log(`✅ Target user ${targetUserId} is online, relaying signal`);
-            // Send to target user's room (more reliable)
-            io.to(targetUserId).emit('call:signal', {
-                conversationId,
-                senderId,
-                signal
-            });
-        } else {
-            console.log(`❌ Target user ${targetUserId} is not online, cannot relay signal`);
-        }
-    });
-
-    // Handle call end
-    socket.on('call:end', (data) => {
-        const { conversationId, targetUserId } = data;
-        const senderId = socket.userId;
-        
-        console.log(`📞 Call ended by: ${senderId}`);
-        
-        // Remove from active calls
-        const callKey1 = `${senderId}-${conversationId}`;
-        const callKey2 = `${targetUserId}-${conversationId}`;
-        activeCalls.delete(callKey1);
-        activeCalls.delete(callKey2);
-        
-        // Notify target user
-        io.to(targetUserId).emit('call:ended', {
-            conversationId,
-            senderId
-        });
-    });
-
-    socket.on('call:decline', async (data) => {
-        const { conversationId, callerId } = data;
-        const declinerId = socket.userId;
-        
-        console.log(`📞 Call declined by: ${declinerId}`);
-        
-        // Remove from active calls
-        const callKey = `${callerId}-${conversationId}`;
-        activeCalls.delete(callKey);
-        
-        try {
-            // Update call log status to declined
-            await client.query(`
-                UPDATE call_logs 
-                SET status = 'declined', ended_at = NOW()
-                WHERE conversation_id = $1 AND caller_id = $2 AND status = 'ringing'
-            `, [conversationId, callerId]);
-
-            const callerUser = activeUsers.get(callerId);
-            if (callerUser) {
-                io.to(callerUser.socketId).emit('call:declined', {
-                    conversationId
-                });
-            }
-
-            console.log(`❌ Call declined: ${callerId}`);
-        } catch (error) {
-            console.error('❌ Error in call:decline:', error);
-        }
-    });
-
-    socket.on('call:end', async (data) => {
-        const { conversationId, targetUserId } = data;
-        
-        try {
-            // Update call log status to ended
-            await client.query(`
-                UPDATE call_logs 
-                SET status = 'ended', ended_at = NOW()
-                WHERE conversation_id = $1 AND status IN ('ringing', 'answered')
-            `, [conversationId]);
-
-            const targetUser = activeUsers.get(targetUserId);
-            if (targetUser) {
-                io.to(targetUser.socketId).emit('call:ended', {
-                    conversationId
-                });
-            }
-
-            console.log(`📞 Call ended: ${conversationId}`);
-        } catch (error) {
-            console.error('❌ Error in call:end:', error);
-        }
-    });
-
-    // Cleanup on disconnect
-    socket.on('disconnect', async () => {
-        console.log(`🔌 User disconnected: ${socket.userId}`);
-        
-        if (socket.userId) {
-            // Remove from active users
-            activeUsers.delete(socket.userId);
-            
-            // End any active calls
-            try {
-                await client.query(`
-                    UPDATE call_logs 
-                    SET status = 'ended', ended_at = NOW(),
-                        duration = EXTRACT(EPOCH FROM (NOW() - started_at))::INTEGER
-                    WHERE caller_id = $1 AND status IN ('initiated', 'answered')
-                `, [socket.userId]);
-                
-                // Notify other participants of disconnect
-                socket.broadcast.emit('user:disconnected', { 
-                    userId: socket.userId 
-                });
-                
-            } catch (error) {
-                console.error('❌ Error in disconnect cleanup:', error);
-            }
-        }
-    });
-
-    socket.on('call:end', async (data) => {
-        const { conversationId, targetUserId } = data;
-        const callerId = socket.userId;
-
-        try {
-            // Update call logs
-            await client.query(`
-                UPDATE call_logs 
-                SET status = 'ended', ended_at = NOW(),
-                    duration = EXTRACT(EPOCH FROM (NOW() - started_at))::INTEGER
-                WHERE conversation_id = $1 AND (caller_id = $2 OR caller_id = $3) AND status IN ('initiated', 'answered')
-            `, [conversationId, callerId, targetUserId]);
-
-            // Notify the other participant
-            const targetUser = activeUsers.get(targetUserId);
-            if (targetUser) {
-                io.to(targetUser.socketId).emit('call:ended', { 
-                    conversationId,
-                    endedBy: callerId 
-                });
-            }
-        } catch (error) {
-            console.error('❌ Error in call:end:', error);
-        }
-    });
-
-    // ========== WEBRTC SIGNALING HANDLERS ==========
-    
-    // WebRTC Call Start
-    socket.on('webrtc:call-start', (data) => {
-        const { callId, callerId, targetUserId, conversationId, type, offer } = data;
-        console.log(`📞 WebRTC Call Start: ${callerId} -> ${targetUserId} (${type})`);
-        
-        // Check if target user is online
-        const targetUser = activeUsers.get(targetUserId);
-        if (targetUser) {
-            console.log(`✅ Target user ${targetUserId} is online, sending call`);
-            io.to(targetUser.socketId).emit('webrtc:incoming-call', {
-                callId,
-                callerId,
-                conversationId,
-                type,
-                offer
-            });
-        } else {
-            console.log(`❌ Target user ${targetUserId} is offline`);
-            socket.emit('webrtc:call-failed', {
-                error: 'User is offline'
-            });
-        }
-    });
-    
-    // WebRTC Call Answer
-    socket.on('webrtc:call-answer', (data) => {
-        const { callId, answer, targetUserId } = data;
-        console.log(`✅ WebRTC Call Answer: ${socket.userId} -> ${targetUserId}`);
-        
-        const targetUser = activeUsers.get(targetUserId);
-        if (targetUser) {
-            io.to(targetUser.socketId).emit('webrtc:call-answer', {
-                callId,
-                answer
-            });
-        }
-    });
-    
-    // WebRTC ICE Candidate
-    socket.on('webrtc:ice-candidate', (data) => {
-        const { callId, candidate, targetUserId } = data;
-        console.log(`🧊 WebRTC ICE Candidate: ${socket.userId} -> ${targetUserId}`);
-        
-        const targetUser = activeUsers.get(targetUserId);
-        if (targetUser) {
-            io.to(targetUser.socketId).emit('webrtc:ice-candidate', {
-                callId,
-                candidate
-            });
-        }
-    });
-    
-    // WebRTC Call Decline
-    socket.on('webrtc:call-decline', (data) => {
-        const { callId, targetUserId } = data;
-        console.log(`❌ WebRTC Call Declined: ${socket.userId} -> ${targetUserId}`);
-        
-        const targetUser = activeUsers.get(targetUserId);
-        if (targetUser) {
-            io.to(targetUser.socketId).emit('webrtc:call-decline', {
-                callId
-            });
-        }
-    });
-    
-    // WebRTC Call End
-    socket.on('webrtc:call-end', (data) => {
-        const { callId, targetUserId } = data;
-        console.log(`📞 WebRTC Call End: ${socket.userId} -> ${targetUserId}`);
-        
-        const targetUser = activeUsers.get(targetUserId);
-        if (targetUser) {
-            io.to(targetUser.socketId).emit('webrtc:call-end', {
-                callId
-            });
-        }
-    });
     
     // ========== SIMPLIFIED WEBRTC ROOM HANDLERS (NEW) ==========
     
     // Join a WebRTC room for calls
-    socket.on('webrtc:join-room', (data) => {
-        const { roomId, userId, callType } = data;
-        console.log(`🚪 WebRTC Room Join: ${userId} joining ${roomId} for ${callType} call`);
+    socket.on('webrtc:join-room', async (data) => {
+        const { roomId, userId, callType, callId } = data;
+        console.log(`🚪 WebRTC Room Join: ${userId} joining ${roomId} for ${callType} call (callId: ${callId})`);
         
         // Join the Socket.IO room
         socket.join(roomId);
@@ -802,6 +454,7 @@ io.on('connection', (socket) => {
         // Store room info on socket
         socket.webrtcRoomId = roomId;
         socket.webrtcCallType = callType;
+        socket.webrtcCallId = callId;
         
         // Check if this is the first person in the room (caller) or second (target accepting)
         const roomSockets = io.sockets.adapter.rooms.get(roomId);
@@ -811,6 +464,45 @@ io.on('connection', (socket) => {
             console.log(`📞 ${userId} is the first to join room ${roomId} (caller waiting)`);
         } else if (participantCount === 2) {
             console.log(`📞 ${userId} joined room ${roomId} as second participant - call now active!`);
+            
+            // Call answered - update database
+            if (callId) {
+                try {
+                    const conversationId = roomId.replace('call_', '');
+                    const participants = Array.from(roomSockets).map(socketId => {
+                        const sock = io.sockets.sockets.get(socketId);
+                        return sock?.userId;
+                    }).filter(Boolean);
+                    
+                    // Update call status to answered
+                    await pool.query(`
+                        UPDATE call_logs 
+                        SET status = 'answered', 
+                            participants = $1,
+                            answered_at = NOW()
+                        WHERE call_id = $2
+                    `, [JSON.stringify(participants), callId]);
+                    
+                    console.log(`✅ Call ${callId} marked as answered with participants:`, participants);
+                    
+                // Create answered call message
+                await pool.query(`
+                    INSERT INTO messages (
+                        conversation_id, sender_id, message_text,
+                        message_type, call_data
+                    ) VALUES ($1, $2, $3, $4, $5)
+                `, [conversationId, userId, `${callType} call started`, 'call_log',
+                    JSON.stringify({ callId, callType, status: 'answered', duration: 0 })]);
+                
+                console.log(`📝 Call answered message created in conversation ${conversationId}`);                    // Emit to both users that message was created
+                    io.to(roomId).emit('webrtc:call-logged', {
+                        callId,
+                        status: 'answered'
+                    });
+                } catch (error) {
+                    console.error('❌ Error updating call status:', error);
+                }
+            }
         } else {
             console.log(`📞 ${userId} joined room ${roomId} (${participantCount} total participants)`);
         }
@@ -825,9 +517,54 @@ io.on('connection', (socket) => {
     });
     
     // Leave a WebRTC room
-    socket.on('webrtc:leave-room', (data) => {
-        const { roomId, userId } = data;
-        console.log(`🚪 WebRTC Room Leave: ${userId} leaving ${roomId}`);
+    socket.on('webrtc:leave-room', async (data) => {
+        const { roomId, userId, duration } = data;
+        const callId = socket.webrtcCallId;
+        console.log(`🚪 WebRTC Room Leave: ${userId} leaving ${roomId} (callId: ${callId}, duration: ${duration}s)`);
+        
+        // Update call log with duration if call was answered
+        if (callId && duration) {
+            try {
+                const conversationId = roomId.replace('call_', '');
+                
+                // Update call log with duration
+                await pool.query(`
+                    UPDATE call_logs 
+                    SET status = 'ended', 
+                        ended_at = NOW(),
+                        duration = $1
+                    WHERE call_id = $2
+                `, [Math.floor(duration), callId]);
+                
+                console.log(`✅ Call ${callId} ended with duration: ${duration}s`);
+                
+                // Format duration
+                const mins = Math.floor(duration / 60);
+                const secs = Math.floor(duration % 60);
+                const durationStr = `${mins}:${secs.toString().padStart(2, '0')}`;
+                
+                // Create call ended message
+                const callType = socket.webrtcCallType || 'voice';
+                await pool.query(`
+                    INSERT INTO messages (
+                        conversation_id, sender_id, message_text,
+                        message_type, call_data
+                    ) VALUES ($1, $2, $3, $4, $5)
+                `, [conversationId, userId, `${callType} call ended`, 'call_log',
+                    JSON.stringify({ callId, callType, status: 'ended', duration: Math.floor(duration) })]);
+                
+                console.log(`📝 Call ended message created: ${durationStr}`);
+                
+                // Emit to both users
+                io.to(roomId).emit('webrtc:call-logged', {
+                    callId,
+                    status: 'ended',
+                    duration: Math.floor(duration)
+                });
+            } catch (error) {
+                console.error('❌ Error updating call end:', error);
+            }
+        }
         
         // Leave the Socket.IO room
         socket.leave(roomId);
@@ -840,6 +577,7 @@ io.on('connection', (socket) => {
         // Clean up socket room info
         delete socket.webrtcRoomId;
         delete socket.webrtcCallType;
+        delete socket.webrtcCallId;
         
         console.log(`✅ User ${userId} left WebRTC room ${roomId}`);
     });
@@ -884,32 +622,98 @@ io.on('connection', (socket) => {
     });
     
     // Initiate call (notify target user to join room)
-    socket.on('webrtc:initiate-call', (data) => {
+    socket.on('webrtc:initiate-call', async (data) => {
         const { conversationId, targetUserId, callType, callerName } = data;
         const callerId = socket.userId;
         const roomId = `call_${conversationId}`;
+        const callId = uuidv4();
         
         console.log(`🔥 WebRTC Call Initiation: ${callerId} calling ${targetUserId} (${callType})`);
         
-        // Check if target user is online
-        const targetUser = activeUsers.get(targetUserId);
-        if (targetUser) {
-            console.log(`📞 Sending incoming call notification to ${targetUserId}`);
+        try {
+            // Create call log entry
+            await pool.query(`
+                INSERT INTO call_logs (
+                    call_id, conversation_id, caller_id, call_type, 
+                    status, started_at
+                ) VALUES ($1, $2, $3, $4, 'ringing', NOW())
+            `, [callId, conversationId, callerId, callType]);
             
-            // Send incoming call notification
-            io.to(targetUser.socketId).emit('webrtc:incoming-call', {
-                roomId: roomId,
-                callType: callType,
-                callerId: callerId,
-                callerName: callerName || 'Unknown',
-                participants: [callerId, targetUserId],
-                conversationId: conversationId
-            });
-        } else {
-            console.log(`❌ Target user ${targetUserId} is offline`);
-            socket.emit('webrtc:call-failed', {
-                error: 'User is offline'
-            });
+            console.log(`💾 Call log created: ${callId}`);
+            
+            // Set 30-second timeout for missed call
+            setTimeout(async () => {
+                try {
+                    const check = await pool.query(
+                        'SELECT status FROM call_logs WHERE call_id = $1',
+                        [callId]
+                    );
+                    
+                    if (check.rows[0]?.status === 'ringing') {
+                        console.log(`⏰ Call ${callId} timed out - marking as missed`);
+                        
+                        await pool.query(
+                            `UPDATE call_logs SET status = 'missed', ended_at = NOW() WHERE call_id = $1`,
+                            [callId]
+                        );
+                        
+                        // Create missed call message
+                        await pool.query(`
+                            INSERT INTO messages (
+                                conversation_id, sender_id, message_text,
+                                message_type, call_data
+                            ) VALUES ($1, $2, $3, $4, $5)
+                        `, [conversationId, callerId, `Missed ${callType} call`, 'call_log',
+                            JSON.stringify({ callId, callType, status: 'missed', duration: 0 })]);
+                        
+                        console.log(`📝 Missed call message created`);
+                    }
+                } catch (error) {
+                    console.error('❌ Error in missed call timeout:', error);
+                }
+            }, 300000); // 5 minutes timeout - gives time to test with second user
+            
+            // Check if target user is online
+            const targetUser = activeUsers.get(targetUserId);
+            
+            // Debug logging
+            console.log(`🔍 Looking for user ${targetUserId} in activeUsers`);
+            console.log(`📊 Active users count: ${activeUsers.size}`);
+            console.log(`👥 Active users:`, Array.from(activeUsers.keys()));
+            
+            if (targetUser) {
+                console.log(`📞 Sending incoming call notification to ${targetUserId} via socket ${targetUser.socketId}`);
+                
+                // Send incoming call notification with callId
+                io.to(targetUser.socketId).emit('webrtc:incoming-call', {
+                    roomId: roomId,
+                    callType: callType,
+                    callerId: callerId,
+                    callerName: callerName || 'Unknown',
+                    participants: [callerId, targetUserId],
+                    conversationId: conversationId,
+                    callId: callId // Add callId to track this call
+                });
+            } else {
+                console.log(`⚠️ Target user ${targetUserId} not found in activeUsers map`);
+                console.log(`🔄 Attempting to send via user room: ${targetUserId}`);
+                
+                // Try sending via user's personal room (they might be connected but not in activeUsers)
+                io.to(targetUserId).emit('webrtc:incoming-call', {
+                    roomId: roomId,
+                    callType: callType,
+                    callerId: callerId,
+                    callerName: callerName || 'Unknown',
+                    participants: [callerId, targetUserId],
+                    conversationId: conversationId,
+                    callId: callId
+                });
+                
+                // Don't mark as missed immediately - let the 30s timeout handle it
+                console.log(`📞 Call notification sent to room ${targetUserId}, waiting for response...`);
+            }
+        } catch (error) {
+            console.error('❌ Error in webrtc:initiate-call:', error);
         }
     });
     
@@ -925,6 +729,235 @@ io.on('connection', (socket) => {
     });
     
     // ========== END SIMPLIFIED WEBRTC HANDLERS ==========
+
+    // ========== RANDOM MEET FEATURE ==========
+    
+    // Toggle meet availability
+    socket.on('meet:toggle', async (data) => {
+        console.log('🎲 Received meet:toggle event:', data, 'from socket:', socket.id);
+        const { enabled } = data;
+        const userId = socket.userId;
+        
+        console.log('🎲 User ID:', userId, 'Socket ID:', socket.id);
+        
+        if (!userId) {
+            console.log('❌ Meet toggle failed - user not authenticated');
+            return;
+        }
+        
+        try {
+            // Get user details from active users (already cached)
+            const activeUser = activeUsers.get(userId);
+            
+            if (!activeUser) {
+                console.log('❌ User not found in activeUsers for meet toggle');
+                socket.emit('meet:error', { message: 'User data not available. Please refresh.' });
+                return;
+            }
+            
+            if (enabled) {
+                // Add user to meet available pool with cached data
+                meetAvailableUsers.set(userId, {
+                    socketId: socket.id,
+                    username: activeUser.username,
+                    displayName: activeUser.displayName,
+                    profilePicture: activeUser.profilePicture,
+                    meetEnabled: true
+                });
+                console.log(`🎲 User ${userId} (${activeUser.displayName}) enabled meet feature`);
+            } else {
+                // Remove user from meet available pool and queue
+                meetAvailableUsers.delete(userId);
+                const queueIndex = meetQueue.indexOf(userId);
+                if (queueIndex > -1) {
+                    meetQueue.splice(queueIndex, 1);
+                }
+                console.log(`🎲 User ${userId} disabled meet feature`);
+            }
+            
+            // Confirm toggle status
+            socket.emit('meet:toggle-confirmed', { 
+                enabled,
+                availableUsers: meetAvailableUsers.size
+            });
+            
+        } catch (error) {
+            console.error('❌ Error toggling meet:', error);
+            socket.emit('meet:error', { message: 'Failed to toggle meet availability' });
+        }
+    });
+    
+    // Request random meet
+    socket.on('meet:request', async (data) => {
+        console.log('🎲 Received meet:request event:', data, 'from socket:', socket.id);
+        const userId = socket.userId;
+        
+        console.log('🎲 User ID:', userId, 'Socket ID:', socket.id);
+        
+        if (!userId) {
+            console.log('❌ Meet request failed - user not authenticated');
+            return;
+        }
+        
+        console.log(`🎲 Meet request from user ${userId}`);
+        
+        // Check if user has meet enabled
+        if (!meetAvailableUsers.has(userId)) {
+            socket.emit('meet:error', { 
+                message: 'Please enable meet toggle first' 
+            });
+            return;
+        }
+        
+        // Check if user is already in queue
+        if (meetQueue.includes(userId)) {
+            socket.emit('meet:error', { 
+                message: 'You are already searching for a match' 
+            });
+            return;
+        }
+        
+        try {
+            // Get user details from meetAvailableUsers (already cached)
+            const currentUserData = meetAvailableUsers.get(userId);
+            
+            if (!currentUserData) {
+                socket.emit('meet:error', { message: 'User data not available. Please enable Meet toggle first.' });
+                return;
+            }
+            
+            const currentUser = {
+                username: currentUserData.username,
+                display_name: currentUserData.displayName,
+                profile_picture_url: currentUserData.profilePicture
+            };
+            
+            // Look for another user in queue (excluding current user)
+            const availableMatch = meetQueue.find(queuedUserId => 
+                queuedUserId !== userId && 
+                meetAvailableUsers.has(queuedUserId)
+            );
+            
+            if (availableMatch) {
+                // Found a match! Remove from queue
+                const matchIndex = meetQueue.indexOf(availableMatch);
+                meetQueue.splice(matchIndex, 1);
+                
+                // Get match user details from cached data
+                const matchUserData = meetAvailableUsers.get(availableMatch);
+                
+                if (!matchUserData) {
+                    // Match user not found in cache, add current user to queue
+                    console.log('⚠️ Match user not in meetAvailableUsers, adding current user to queue');
+                    meetQueue.push(userId);
+                    socket.emit('meet:searching', { 
+                        message: 'Searching for a match...',
+                        queuePosition: meetQueue.length
+                    });
+                    return;
+                }
+                
+                const matchUser = {
+                    username: matchUserData.username,
+                    display_name: matchUserData.displayName,
+                    profile_picture_url: matchUserData.profilePicture
+                };
+                
+                // Create a unique room for this random meet
+                const meetRoomId = `meet_${uuidv4()}`;
+                const callId = uuidv4();
+                
+                console.log(`✅ Match found! ${userId} ↔️ ${availableMatch} in room ${meetRoomId}`);
+                console.log(`📤 Sending match data to both users:`);
+                console.log(`   - Initiator: ${userId} (socket: ${socket.id})`);
+                console.log(`   - Receiver: ${availableMatch} (socket: ${matchUserData.socketId})`);
+                
+                // Create call log entry (non-blocking, don't await)
+                // Random Meet starts as audio call, users can enable video later
+                pool.query(`
+                    INSERT INTO call_logs (
+                        call_id, conversation_id, caller_id, call_type, 
+                        status, started_at
+                    ) VALUES ($1, $2, $3, $4, 'ringing', NOW())
+                `, [callId, meetRoomId, userId, 'audio']).catch(err => {
+                    console.error('⚠️ Failed to log call (non-critical):', err.message);
+                });
+                
+                // Notify both users of the match
+                const matchData = {
+                    roomId: meetRoomId,
+                    callType: 'audio',  // Start as audio call
+                    callId: callId,
+                    isMeetCall: true
+                };
+                
+                const initiatorData = {
+                    ...matchData,
+                    partnerId: availableMatch,
+                    partnerName: matchUser.display_name,
+                    partnerUsername: matchUser.username,
+                    partnerProfilePicture: matchUser.profile_picture_url,
+                    isInitiator: true
+                };
+                
+                const receiverData = {
+                    ...matchData,
+                    partnerId: userId,
+                    partnerName: currentUser.display_name,
+                    partnerUsername: currentUser.username,
+                    partnerProfilePicture: currentUser.profile_picture_url,
+                    isInitiator: false
+                };
+                
+                console.log('📤 Initiator data:', JSON.stringify(initiatorData, null, 2));
+                console.log('📤 Receiver data:', JSON.stringify(receiverData, null, 2));
+                
+                // Notify current user (initiator)
+                socket.emit('meet:matched', initiatorData);
+                console.log(`✅ Sent meet:matched to initiator ${userId}`);
+                
+                // Notify matched user (receiver)
+                io.to(matchUserData.socketId).emit('meet:matched', receiverData);
+                console.log(`✅ Sent meet:matched to receiver ${availableMatch}`);
+                
+            } else {
+                // No match found, add to queue
+                meetQueue.push(userId);
+                console.log(`🔍 User ${userId} added to meet queue (position: ${meetQueue.length})`);
+                
+                socket.emit('meet:searching', { 
+                    message: 'Searching for a match...',
+                    queuePosition: meetQueue.length,
+                    availableUsers: meetAvailableUsers.size
+                });
+            }
+            
+        } catch (error) {
+            console.error('❌ Error processing meet request:', error);
+            socket.emit('meet:error', { 
+                message: 'Failed to find a match. Please try again.' 
+            });
+        }
+    });
+    
+    // Cancel meet search
+    socket.on('meet:cancel', () => {
+        const userId = socket.userId;
+        
+        if (!userId) return;
+        
+        const queueIndex = meetQueue.indexOf(userId);
+        if (queueIndex > -1) {
+            meetQueue.splice(queueIndex, 1);
+            console.log(`🚫 User ${userId} cancelled meet search`);
+            
+            socket.emit('meet:cancelled', { 
+                message: 'Search cancelled' 
+            });
+        }
+    });
+    
+    // ========== END RANDOM MEET FEATURE ==========
 
     // Handle disconnection
     socket.on('disconnect', async () => {
@@ -946,6 +979,13 @@ io.on('connection', (socket) => {
             
             // Update user status to offline
             activeUsers.delete(userId);
+            
+            // Clean up random meet data
+            meetAvailableUsers.delete(userId);
+            const queueIndex = meetQueue.indexOf(userId);
+            if (queueIndex > -1) {
+                meetQueue.splice(queueIndex, 1);
+            }
             
             // Remove from active rooms
             for (const [roomId, sockets] of activeRooms.entries()) {
@@ -1514,6 +1554,82 @@ app.get('/api/posts', async (req, res) => {
     } catch (error) {
         console.error('Error fetching posts:', error);
         res.status(500).send({ error: 'Failed to fetch posts.' });
+    }
+});
+
+// Get individual post by ID
+app.get('/api/posts/:postId', async (req, res) => {
+    try {
+        const { postId } = req.params;
+        
+        const postQuery = `
+            SELECT 
+                p.post_id as id,
+                p.user_id as "userId",
+                p.description,
+                p.created_at,
+                u.username,
+                u.display_name as "displayName",
+                u.profile_picture_url as "profilePictureUrl",
+                COALESCE(
+                    json_agg(
+                        DISTINCT pi.image_url
+                    ) FILTER (WHERE pi.image_url IS NOT NULL), 
+                    '[]'::json
+                ) as "imageUrls",
+                COALESCE(
+                    json_agg(
+                        DISTINCT jsonb_build_object(
+                            'userId', l.user_id
+                        )
+                    ) FILTER (WHERE l.user_id IS NOT NULL), 
+                    '[]'::json
+                ) as likes,
+                COALESCE(
+                    json_agg(
+                        DISTINCT jsonb_build_object(
+                            'userId', c.user_id,
+                            'commentId', c.comment_id,
+                            'text', c.comment_text,
+                            'createdAt', c.created_at
+                        )
+                    ) FILTER (WHERE c.comment_id IS NOT NULL), 
+                    '[]'::json
+                ) as comments
+            FROM posts p
+            JOIN users u ON p.user_id = u.user_id
+            LEFT JOIN post_images pi ON p.post_id = pi.post_id
+            LEFT JOIN likes l ON p.post_id = l.post_id
+            LEFT JOIN comments c ON p.post_id = c.post_id
+            WHERE p.post_id = $1
+            GROUP BY p.post_id, p.user_id, p.description, p.created_at, u.username, u.display_name, u.profile_picture_url
+            ORDER BY p.created_at DESC
+        `;
+        
+        const result = await pool.query(postQuery, [postId]);
+        
+        if (result.rows.length === 0) {
+            return res.status(404).send({ error: 'Post not found.' });
+        }
+        
+        const post = {
+            type: 'post',
+            id: result.rows[0].id,
+            userId: result.rows[0].userId,
+            username: result.rows[0].username,
+            displayName: result.rows[0].displayName,
+            profilePictureUrl: result.rows[0].profilePictureUrl,
+            description: result.rows[0].description,
+            imageUrls: result.rows[0].imageUrls,
+            likes: result.rows[0].likes,
+            comments: result.rows[0].comments,
+            createdAt: new Date(result.rows[0].created_at).getTime()
+        };
+        
+        res.status(200).send(post);
+    } catch (error) {
+        console.error('Error fetching post:', error);
+        res.status(500).send({ error: 'Failed to fetch post.' });
     }
 });
 
@@ -2373,6 +2489,91 @@ app.get('/api/polls', async (req, res) => {
     } catch (error) {
         console.error('Error fetching polls:', error);
         res.status(500).send({ error: 'Failed to fetch polls.' });
+    }
+});
+
+// Get individual poll by ID
+app.get('/api/polls/:pollId', async (req, res) => {
+    try {
+        const { pollId } = req.params;
+        
+        const pollQuery = `
+            SELECT 
+                p.poll_id as id,
+                p.user_id as "userId",
+                p.question,
+                p.description,
+                p.expires_at as "expiresAt",
+                p.allow_multiple_votes as "allowMultipleVotes",
+                p.created_at,
+                u.username,
+                u.display_name as "displayName",
+                u.profile_picture_url as "profilePictureUrl",
+                COALESCE(
+                    json_agg(
+                        json_build_object(
+                            'optionId', po.option_id,
+                            'text', po.option_text,
+                            'order', po.option_order,
+                            'votes', COALESCE(vote_counts.vote_count, 0)
+                        )
+                        ORDER BY po.option_order
+                    ) FILTER (WHERE po.option_id IS NOT NULL), 
+                    '[]'::json
+                ) as options,
+                COALESCE(
+                    (
+                        SELECT json_agg(
+                            jsonb_build_object(
+                                'userId', pv2.user_id,
+                                'optionId', pv2.option_id
+                            )
+                        )
+                        FROM poll_votes pv2 
+                        WHERE pv2.poll_id = p.poll_id
+                    ),
+                    '[]'::json
+                ) as "userVotes"
+            FROM polls p
+            JOIN users u ON p.user_id = u.user_id
+            LEFT JOIN poll_options po ON p.poll_id = po.poll_id
+            LEFT JOIN (
+                SELECT 
+                    option_id,
+                    COUNT(*) as vote_count
+                FROM poll_votes
+                GROUP BY option_id
+            ) vote_counts ON po.option_id = vote_counts.option_id
+            WHERE p.poll_id = $1
+            GROUP BY p.poll_id, p.user_id, p.question, p.description, p.expires_at, p.allow_multiple_votes, p.created_at, u.username, u.display_name, u.profile_picture_url
+        `;
+        
+        const result = await pool.query(pollQuery, [pollId]);
+        
+        if (result.rows.length === 0) {
+            return res.status(404).send({ error: 'Poll not found.' });
+        }
+        
+        const poll = {
+            type: 'poll',
+            id: result.rows[0].id,
+            userId: result.rows[0].userId,
+            username: result.rows[0].username,
+            displayName: result.rows[0].displayName,
+            profilePictureUrl: result.rows[0].profilePictureUrl,
+            question: result.rows[0].question,
+            description: result.rows[0].description,
+            options: result.rows[0].options,
+            userVotes: result.rows[0].userVotes,
+            allowMultipleVotes: result.rows[0].allowMultipleVotes,
+            expiresAt: result.rows[0].expiresAt ? new Date(result.rows[0].expiresAt).getTime() : null,
+            createdAt: new Date(result.rows[0].created_at).getTime()
+        };
+        
+        res.status(200).send(poll);
+    } catch (error) {
+        console.error('Error fetching poll:', error);
+        res.status(500).send({ error: 'Failed to fetch poll.' });
     }
 });
 

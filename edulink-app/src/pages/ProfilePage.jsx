@@ -1,4 +1,5 @@
 import React from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { auth } from '../App';
 import { apiCall } from '../config/api';
 
@@ -36,7 +37,12 @@ function useProfileData(userId) {
 }
 
 
-export default function ProfilePage({ viewingProfileId, currentUserData, navigateToHome, onProfileUpdate }) {
+export default function ProfilePage({ currentUserData, onProfileUpdate }) {
+    const { userId } = useParams();
+    const navigate = useNavigate();
+    
+    // If no userId in URL, show current user's profile
+    const viewingProfileId = userId || auth.currentUser?.uid;
     const { profileData: viewedUserData, loading: profileLoading, refetch } = useProfileData(viewingProfileId);
     const [isEditing, setIsEditing] = React.useState(false);
     const [editFormData, setEditFormData] = React.useState(null);
@@ -288,7 +294,7 @@ export default function ProfilePage({ viewingProfileId, currentUserData, navigat
             {/* Navigation */}
             <nav className="navbar">
                 <div className="navbar-content">
-                    <button onClick={navigateToHome} className="btn btn-secondary">
+                    <button onClick={() => navigate('/')} className="btn btn-secondary">
                         ← Back to Home
                     </button>
                     <a href="#" className="navbar-brand">Profile</a>

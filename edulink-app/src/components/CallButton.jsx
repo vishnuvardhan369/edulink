@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import CallInterface from './components/Calls/CallInterface';
+import CallInterface from './Calls/CallInterface';
 import './CallButton.css';
 
 const CallButton = () => {

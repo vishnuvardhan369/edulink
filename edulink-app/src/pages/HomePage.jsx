@@ -1,13 +1,16 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import CreateContent from '../components/CreateContent';
 import Post from '../components/Post';
 import Poll from '../components/Poll';
+import RandomMeet from '../components/RandomMeet';
 import { apiCall } from '../config/api';
 import { auth } from '../App';
 
 // New component to show connection requests
-function ConnectionRequests({ requests, navigateToProfile }) {
+function ConnectionRequests({ requests }) {
     const [requestingUsers, setRequestingUsers] = React.useState([]);
+    const navigate = useNavigate();
 
     React.useEffect(() => {
         const fetchUsers = async () => {
@@ -43,7 +46,7 @@ function ConnectionRequests({ requests, navigateToProfile }) {
             <div className="card-body">
                 {requestingUsers.map(user => (
                     <div key={user.id} 
-                         onClick={() => navigateToProfile(user.id)} 
+                         onClick={() => navigate(`/profile/${user.id}`)} 
                          className="d-flex align-items-center gap-3 mb-2"
                          style={{ 
                              cursor: 'pointer', 
@@ -71,7 +74,8 @@ function ConnectionRequests({ requests, navigateToProfile }) {
     );
 }
 
-export default function HomePage({ userData, onSignOut, navigateToProfile, navigateToSearch, navigateToNotifications, navigateToChat }) {
+export default function HomePage({ userData, onSignOut }) {
+    const navigate = useNavigate();
     const [feedItems, setFeedItems] = React.useState([]);
     const [loading, setLoading] = React.useState(true);
     const [error, setError] = React.useState('');
@@ -129,7 +133,7 @@ export default function HomePage({ userData, onSignOut, navigateToProfile, navig
                     <a href="#" className="navbar-brand">EduLink</a>
                     <div className="navbar-nav">
                         <button 
-                            onClick={navigateToNotifications} 
+                            onClick={() => navigate('/notifications')} 
                             className="btn btn-secondary notification-button"
                         >
                             Notifications
@@ -139,13 +143,13 @@ export default function HomePage({ userData, onSignOut, navigateToProfile, navig
                                 </span>
                             }
                         </button>
-                        <button onClick={navigateToSearch} className="btn btn-secondary">
+                        <button onClick={() => navigate('/search')} className="btn btn-secondary">
                             Search
                         </button>
-                        <button onClick={navigateToChat} className="btn btn-secondary">
+                        <button onClick={() => navigate('/chat')} className="btn btn-secondary">
                             💬 Messages
                         </button>
-                        <button onClick={() => navigateToProfile(auth.currentUser.uid)} className="btn btn-secondary">
+                        <button onClick={() => navigate(`/profile/${auth.currentUser.uid}`)} className="btn btn-secondary">
                             My Profile
                         </button>
                         <button onClick={onSignOut} className="btn btn-outline">
@@ -160,7 +164,6 @@ export default function HomePage({ userData, onSignOut, navigateToProfile, navig
                 {/* Connection Requests */}
                 <ConnectionRequests 
                     requests={userData.connectionRequestsReceived || []} 
-                    navigateToProfile={navigateToProfile}
                 />
                 
                 {/* Create Content Section */}
@@ -224,13 +227,11 @@ export default function HomePage({ userData, onSignOut, navigateToProfile, navig
                                     post={item} 
                                     onPostUpdate={handlePostUpdate}
                                     onPostDelete={handlePostDelete}
-                                    navigateToProfile={navigateToProfile}
                                 />
                             ) : (
                                 <Poll 
                                     poll={item} 
                                     onPollUpdate={handlePollUpdate}
-                                    navigateToProfile={navigateToProfile}
                                 />
                             )}
                         </div>
@@ -252,6 +253,9 @@ export default function HomePage({ userData, onSignOut, navigateToProfile, navig
                     )}
                 </div>
             </div>
+            
+            {/* Random Meet Dice Button - Fixed at bottom right */}
+            <RandomMeet />
         </div>
     );
 };

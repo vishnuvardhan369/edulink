@@ -1,18 +1,22 @@
 import { useState, useRef, useEffect } from 'react';
 import './VideoCallWindow.css';
 
-const VideoCallWindow = ({ call, localStream, remoteStream, onEndCall, user }) => {
+const VideoCallWindow = ({ call, localStream, remoteStream, onEndCall, user, socket }) => {
     const [isMuted, setIsMuted] = useState(false);
-    const [isVideoOff, setIsVideoOff] = useState(false);
+    const [isVideoOff, setIsVideoOff] = useState(call?.callType === 'audio');
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [callDuration, setCallDuration] = useState(0);
     const [isProcessing, setIsProcessing] = useState(false);
+    const [callStarted, setCallStarted] = useState(false);
     
     const localVideoRef = useRef(null);
     const remoteVideoRef = useRef(null);
-    const callStartTime = useRef(Date.now());
+    const remoteAudioRef = useRef(null);  // For audio-only calls
+    const callStartTime = useRef(null);
     const durationInterval = useRef(null);
     const processingTimeout = useRef(null);
+
+    const isAudioCall = call?.callType === 'audio';
 
     useEffect(() => {
         // Set up video streams
@@ -20,16 +24,32 @@ const VideoCallWindow = ({ call, localStream, remoteStream, onEndCall, user }) =
             localVideoRef.current.srcObject = localStream;
         }
         
-        if (remoteVideoRef.current && remoteStream) {
-            remoteVideoRef.current.srcObject = remoteStream;
+        // For audio calls, use audio element; for video calls, use video element
+        if (remoteStream) {
+            if (isAudioCall && remoteAudioRef.current) {
+                console.log('🔊 Setting remote audio stream for audio call');
+                remoteAudioRef.current.srcObject = remoteStream;
+                remoteAudioRef.current.play().catch(err => {
+                    console.error('❌ Error playing remote audio:', err);
+                });
+            } else if (!isAudioCall && remoteVideoRef.current) {
+                console.log('📹 Setting remote video stream for video call');
+                remoteVideoRef.current.srcObject = remoteStream;
+            }
         }
-    }, [localStream, remoteStream]);
+    }, [localStream, remoteStream, isAudioCall]);
 
     useEffect(() => {
-        // Start call duration timer
-        durationInterval.current = setInterval(() => {
-            setCallDuration(Math.floor((Date.now() - callStartTime.current) / 1000));
-        }, 1000);
+        // Start timer only when remote stream is connected (call answered)
+        if (remoteStream && !callStarted) {
+            console.log('📞 Call answered, starting timer');
+            setCallStarted(true);
+            callStartTime.current = Date.now();
+            
+            durationInterval.current = setInterval(() => {
+                setCallDuration(Math.floor((Date.now() - callStartTime.current) / 1000));
+            }, 1000);
+        }
 
         return () => {
             if (durationInterval.current) {
@@ -39,7 +59,7 @@ const VideoCallWindow = ({ call, localStream, remoteStream, onEndCall, user }) =
                 clearTimeout(processingTimeout.current);
             }
         };
-    }, []);
+    }, [remoteStream, callStarted]);
 
     const formatDuration = (seconds) => {
         const mins = Math.floor(seconds / 60);
@@ -122,7 +142,10 @@ const VideoCallWindow = ({ call, localStream, remoteStream, onEndCall, user }) =
         if (durationInterval.current) {
             clearInterval(durationInterval.current);
         }
-        onEndCall();
+        
+        // Pass duration to onEndCall so it can send to backend via webrtc:leave-room
+        console.log('📞 Ending call, duration:', callDuration, 'seconds');
+        onEndCall(callDuration);
     };
 
     const getCallTypeIcon = () => {
@@ -138,7 +161,6 @@ const VideoCallWindow = ({ call, localStream, remoteStream, onEndCall, user }) =
         }
     };
 
-    const isAudioCall = call.callType === 'audio';
     const isScreenShare = call.callType === 'screen';
 
     return (
@@ -170,8 +192,19 @@ const VideoCallWindow = ({ call, localStream, remoteStream, onEndCall, user }) =
             </div>
 
             <div className="video-container">
+                {/* Hidden audio element for audio-only calls */}
+                {isAudioCall && (
+                    <audio 
+                        ref={remoteAudioRef} 
+                        autoPlay 
+                        playsInline
+                        style={{ display: 'none' }}
+                    />
+                )}
+                
                 {/* Remote video/audio */}
                 <div className="remote-video">
+                    {/* Audio calls: Always show avatar with visualizer (no video) */}
                     {isAudioCall ? (
                         <div className="audio-call-avatar">
                             <div className="avatar-circle extra-large">
@@ -184,8 +217,12 @@ const VideoCallWindow = ({ call, localStream, remoteStream, onEndCall, user }) =
                                 <div className="bar"></div>
                                 <div className="bar"></div>
                             </div>
+                            {remoteStream && (
+                                <p className="audio-connected">🔊 Connected</p>
+                            )}
                         </div>
                     ) : (
+                        /* Video calls: Show video stream */
                         <video
                             ref={remoteVideoRef}
                             autoPlay
@@ -202,7 +239,7 @@ const VideoCallWindow = ({ call, localStream, remoteStream, onEndCall, user }) =
                     )}
                 </div>
 
-                {/* Local video (picture-in-picture) */}
+                {/* Local video (picture-in-picture) - ONLY for video/screen calls */}
                 {!isAudioCall && localStream && (
                     <div className={`local-video ${isVideoOff ? 'video-off' : ''}`}>
                         {isVideoOff ? (
@@ -233,6 +270,7 @@ const VideoCallWindow = ({ call, localStream, remoteStream, onEndCall, user }) =
                         {isMuted ? '🔇' : '🔊'}
                     </button>
 
+                    {/* Only show video toggle for video/screen calls, NOT for audio calls */}
                     {!isAudioCall && (
                         <button
                             className={`control-button ${isVideoOff ? 'active' : ''} ${isProcessing ? 'disabled' : ''}`}
