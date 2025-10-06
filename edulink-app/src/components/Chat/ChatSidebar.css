@@ -1,10 +1,13 @@
 /* Chat Sidebar */
 .chat-sidebar {
-    width: 320px;
+    width: 350px;
+    min-width: 350px;
+    max-width: 350px;
     border-right: 1px solid #e5e5e5;
     display: flex;
     flex-direction: column;
     background: #fafafa;
+    flex-shrink: 0; /* Prevent sidebar from shrinking */
 }
 
 .sidebar-header {
@@ -69,6 +72,9 @@
 .conversations-list {
     flex: 1;
     overflow-y: auto;
+    overflow-x: hidden;
+    height: 0; /* Force flex item to respect parent height */
+    min-height: 0; /* Allow shrinking */
 }
 
 .no-conversations {
@@ -98,17 +104,27 @@
     padding: 16px;
     cursor: pointer;
     border-bottom: 1px solid #f0f0f0;
-    transition: background-color 0.2s ease;
+    transition: all 0.2s ease;
     position: relative;
+    pointer-events: auto;
+    z-index: 1;
+    background: white;
+    user-select: none;
 }
 
 .conversation-item:hover {
     background: #f8f9fa;
+    transform: translateX(2px);
 }
 
 .conversation-item.active {
     background: #e3f2fd;
-    border-right: 3px solid #007aff;
+    border-left: 4px solid #007aff;
+    padding-left: 12px;
+}
+
+.conversation-item:active {
+    transform: scale(0.98);
 }
 
 .conversation-avatar {

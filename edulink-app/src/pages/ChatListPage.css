@@ -1,19 +1,23 @@
 /* Chat List Page */
 .chat-list-page {
-    max-width: 800px;
-    margin: 0 auto;
-    padding: 20px;
-    min-height: 100vh;
+    width: 100vw;
+    height: 100vh;
+    margin: 0;
+    padding: 0;
     background: #f8f9fa;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
 }
 
 .chat-list-header {
     display: flex;
     align-items: center;
     gap: 16px;
-    margin-bottom: 24px;
-    padding-bottom: 16px;
+    padding: 20px;
     border-bottom: 1px solid #e5e5e5;
+    background: white;
+    flex-shrink: 0;
 }
 
 .back-button {
@@ -43,11 +47,9 @@
 .chat-tabs {
     display: flex;
     gap: 0;
-    margin-bottom: 20px;
     background: white;
-    border-radius: 12px;
-    padding: 4px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    padding: 4px 20px;
+    flex-shrink: 0;
 }
 
 .tab-button {
@@ -74,7 +76,9 @@
 
 /* Search Container */
 .search-container {
-    margin-bottom: 20px;
+    padding: 20px;
+    background: white;
+    flex-shrink: 0;
 }
 
 .search-input {
@@ -97,10 +101,9 @@
 /* Chat Content */
 .chat-content {
     background: white;
-    border-radius: 12px;
-    overflow: hidden;
-    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
-    min-height: 400px;
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
 }
 
 /* Empty States */
@@ -146,8 +149,17 @@
 }
 
 /* Conversations List */
+.conversations-section {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow-y: auto;
+}
+
 .conversations-list {
     padding: 0;
+    flex: 1;
+    min-height: 0;
 }
 
 .conversation-item {

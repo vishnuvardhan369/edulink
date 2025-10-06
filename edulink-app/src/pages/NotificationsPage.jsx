@@ -2,9 +2,11 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { auth } from '../App';
 import { apiCall } from '../config/api';
+import { useSocket } from '../hooks/useSocket';
 
 export default function NotificationsPage({ currentUserData, onUpdate }) {
     const navigate = useNavigate();
+    const { socket } = useSocket();
     const [notifications, setNotifications] = React.useState([]);
     const [loading, setLoading] = React.useState(true);
 
@@ -34,16 +36,55 @@ export default function NotificationsPage({ currentUserData, onUpdate }) {
         }
     }, [currentUserData]);
 
+    // Listen for real-time notifications
+    React.useEffect(() => {
+        if (!socket || !auth.currentUser) return;
+
+        const handleNewNotification = (notification) => {
+            console.log('🔔 Received new notification:', notification);
+            setNotifications(prev => [notification, ...prev]);
+        };
+
+        socket.on('notification:new', handleNewNotification);
+
+        return () => {
+            socket.off('notification:new', handleNewNotification);
+        };
+    }, [socket]);
+
     const handleConnection = async (action, senderId) => {
         try {
+            console.log(`🔄 NotificationsPage: Attempting to ${action} from user ${senderId}`);
+            console.log(`📡 API URL: /api/users/${senderId}/${action}`);
+            console.log(`👤 Current user ID: ${auth.currentUser.uid}`);
+            
             const response = await apiCall(`/api/users/${senderId}/${action}`, {
                 method: 'POST',
                 credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ currentUserId: auth.currentUser.uid })
             });
-            if (!response.ok) throw new Error(`Failed to ${action} request.`);
+            
+            console.log(`📊 Response status: ${response.status}`);
+            
+            if (!response.ok) {
+                const errorData = await response.json();
+                console.error('❌ Error response:', errorData);
+                throw new Error(errorData.error || `Failed to ${action} request.`);
+            }
+            
+            const responseData = await response.json();
+            console.log(`✅ Success response:`, responseData);
+            
+            // Show success message
+            if (action === 'accept-connect') {
+                alert('Connection request accepted!');
+            } else if (action === 'reject-request') {
+                alert('Connection request rejected!');
+            }
             
             // Refresh notifications and user data
+            console.log('🔄 Refreshing notifications...');
             const notificationsResponse = await apiCall(`/api/notifications/${auth.currentUser.uid}`, {
                 method: 'GET',
                 credentials: 'include'
@@ -51,13 +92,18 @@ export default function NotificationsPage({ currentUserData, onUpdate }) {
             
             if (notificationsResponse.ok) {
                 const data = await notificationsResponse.json();
+                console.log(`✅ Refreshed notifications: ${data.length} notifications`);
                 setNotifications(data);
             }
             
-            onUpdate();
+            if (onUpdate) {
+                console.log('🔄 Calling onUpdate...');
+                await onUpdate();
+            }
 
         } catch (error) {
-            alert(error.message);
+            console.error('❌ Error in handleConnection:', error);
+            alert(`Failed to ${action}: ${error.message}`);
         }
     };
 

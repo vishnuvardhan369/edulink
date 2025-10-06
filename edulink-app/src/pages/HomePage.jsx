@@ -146,6 +146,9 @@ export default function HomePage({ userData, onSignOut }) {
                         <button onClick={() => navigate('/search')} className="btn btn-secondary">
                             Search
                         </button>
+                        <button onClick={() => navigate('/roadmap')} className="btn btn-secondary">
+                            🗺️ AI Roadmap
+                        </button>
                         <button onClick={() => navigate('/chat')} className="btn btn-secondary">
                             💬 Messages
                         </button>

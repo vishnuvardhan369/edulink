@@ -168,7 +168,9 @@ export const useWebRTCSimple = (user, incomingCallProp = null) => {
             setCurrentCall({
                 roomId,
                 type,
+                callType: type,  // Add for VideoCallWindow
                 participants: incomingCall.participants,
+                participantName: incomingCall.callerName || 'Unknown',  // Add caller name
                 conversationId: incomingCall.conversationId,
                 callId: incomingCall.callId
             });
@@ -180,7 +182,7 @@ export const useWebRTCSimple = (user, incomingCallProp = null) => {
                 callId: incomingCall.callId 
             });
             
-            // Join the room with callId
+            // Join the room with callId - this is CRITICAL for establishing connection
             socket.emit('webrtc:join-room', { 
                 roomId, 
                 userId: user.id, 
@@ -190,7 +192,7 @@ export const useWebRTCSimple = (user, incomingCallProp = null) => {
             
             setIncomingCall(null);
             setIsConnecting(false);
-            console.log('✅ Call answered successfully');
+            console.log('✅ Call answered successfully - waiting for peer connection');
             
         } catch (error) {
             console.error('Error answering call:', error);

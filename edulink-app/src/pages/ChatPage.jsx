@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth.jsx';
 import { useSocket } from '../hooks/useSocket.jsx';
@@ -114,14 +114,21 @@ const ChatPage = () => {
     }, [user, socket, isConnected, navigate]);
 
     // Auto-select conversation if conversationId is provided
+    const hasAutoSelected = useRef(false);
     useEffect(() => {
-        if (conversationId && conversations.length > 0) {
+        if (conversationId && conversations.length > 0 && !hasAutoSelected.current) {
             const conversation = conversations.find(c => c.conversation_id === conversationId);
-            if (conversation) {
+            if (conversation && (!activeConversation || activeConversation.conversation_id !== conversationId)) {
+                hasAutoSelected.current = true;
                 selectConversation(conversation);
             }
         }
-    }, [conversationId, conversations]);
+    }, [conversationId, conversations, activeConversation]);
+
+    // Reset auto-select ref when conversationId changes
+    useEffect(() => {
+        hasAutoSelected.current = false;
+    }, [conversationId]);
 
     // Auto-answer pending call when conversation is loaded
     useEffect(() => {
@@ -132,53 +139,87 @@ const ChatPage = () => {
             console.log('- incomingCall:', incomingCall);
             
             if (pendingCall.conversationId === activeConversation.conversation_id) {
-                // Small delay to ensure everything is ready
-                setTimeout(() => {
-                    console.log('✅ Calling answerCall()');
-                    answerCall();
-                }, 500);
+                // Answer immediately without delay
+                console.log('✅ Calling answerCall() immediately');
+                answerCall();
             }
         }
     }, [pendingCall, activeConversation, incomingCall, answerCall]);
 
-    const loadConversations = async () => {
+    const loadConversations = useCallback(async () => {
+        if (!user || !user.id) {
+            console.warn('⚠️ Cannot load conversations - user not available');
+            setLoading(false);
+            return;
+        }
         try {
+            console.log('📥 Loading conversations for user:', user.id);
             const response = await apiCall(`/api/chats?userId=${user.id}`);
             if (response.ok) {
                 const data = await response.json();
-                setConversations(data);
+                console.log('✅ Loaded conversations:', data.length);
+                console.log('📋 Conversations data:', data);
+                setConversations(data || []);
+            } else {
+                const errorText = await response.text();
+                console.error('❌ Failed to load conversations, status:', response.status, errorText);
+                setConversations([]);
             }
         } catch (error) {
-            console.error('Error loading conversations:', error);
+            console.error('❌ Error loading conversations:', error);
+            setConversations([]);
         } finally {
             setLoading(false);
         }
-    };
+    }, [user]);
 
-    const loadMessages = async (conversationId) => {
+    const loadMessages = useCallback(async (conversationId) => {
+        if (!conversationId || !user) return;
         try {
+            console.log('📩 Loading messages for conversation:', conversationId);
             const response = await apiCall(
                 `/api/chats/${conversationId}/messages?userId=${user.id}&limit=50`
             );
             if (response.ok) {
                 const data = await response.json();
+                console.log('✅ Messages loaded:', data.length, 'messages');
                 setMessages(data);
+            } else {
+                console.error('❌ Failed to load messages, status:', response.status);
+                setMessages([]);
             }
         } catch (error) {
-            console.error('Error loading messages:', error);
+            console.error('❌ Error loading messages:', error);
+            setMessages([]);
         }
-    };
+    }, [user]);
 
     const handleNewMessage = (message) => {
+        console.log('📨 Received new message:', message);
+        
         if (activeConversation && message.conversation_id === activeConversation.conversation_id) {
-            // Check for duplicates before adding
             setMessages(prev => {
+                // Check for duplicates
                 const exists = prev.some(msg => msg.message_id === message.message_id);
                 if (exists) {
-                    console.log('Duplicate message detected, skipping:', message.message_id);
+                    console.log('⚠️ Duplicate message detected, skipping:', message.message_id);
                     return prev;
                 }
-                return [...prev, message];
+                
+                // Remove any temporary message from the same sender with similar text
+                const withoutTemp = prev.filter(msg => {
+                    if (msg.is_temp && msg.sender_id === message.sender_id) {
+                        // Check if the message text matches (temp message being replaced by real one)
+                        const timeDiff = new Date(message.created_at) - new Date(msg.created_at);
+                        if (msg.message_text === message.message_text && timeDiff < 5000) {
+                            console.log('🔄 Replacing temp message with real one');
+                            return false;
+                        }
+                    }
+                    return true;
+                });
+                
+                return [...withoutTemp, message];
             });
         }
         
@@ -237,25 +278,63 @@ const ChatPage = () => {
             fileName
         };
 
+        console.log('📤 Sending message:', messageData);
+        
+        // Optimistically add message to UI immediately
+        const tempMessage = {
+            message_id: `temp-${Date.now()}`,
+            conversation_id: activeConversation.conversation_id,
+            sender_id: user.id,
+            sender_username: user.username,
+            sender_display_name: user.displayName || user.username,
+            message_text: messageText,
+            message_type: messageType,
+            file_url: fileUrl,
+            file_name: fileName,
+            created_at: new Date().toISOString(),
+            is_temp: true // Mark as temporary
+        };
+        
+        setMessages(prev => [...prev, tempMessage]);
+        
         socket.emit('message:send', messageData);
     };
 
-    const selectConversation = (conversation) => {
-        setActiveConversation(conversation);
-        loadMessages(conversation.conversation_id);
+    const selectConversation = async (conversation) => {
+        // Mark current messages as read before switching
+        if (activeConversation) {
+            await markMessagesAsRead(activeConversation.conversation_id);
+            // Leave previous conversation room
+            if (socket) {
+                socket.emit('conversation:leave', activeConversation.conversation_id);
+            }
+        }
         
-        // Mark messages as read
-        markMessagesAsRead(conversation.conversation_id);
+        // Clear messages and set new conversation
+        setMessages([]);
+        setActiveConversation(conversation);
+        
+        // Join new conversation room
+        if (socket) {
+            console.log('🚪 Joining conversation room:', conversation.conversation_id);
+            socket.emit('conversation:join', conversation.conversation_id);
+        }
+        
+        // Load new messages
+        await loadMessages(conversation.conversation_id);
     };
 
     const markMessagesAsRead = async (conversationId) => {
         try {
+            // Get the last message ID from current messages state
+            const lastMessageId = messages.length > 0 ? messages[messages.length - 1]?.message_id : null;
+            
             const response = await apiCall(`/api/chats/${conversationId}/read`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
                     userId: user.id,
-                    lastReadMessageId: messages[messages.length - 1]?.message_id
+                    lastReadMessageId: lastMessageId
                 })
             });
 

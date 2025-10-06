@@ -20,8 +20,10 @@ import ChatListPage from './pages/ChatListPage';
 import PostPage from './pages/PostPage';
 import PollPage from './pages/PollPage';
 import MeetCallPage from './pages/MeetCallPage';
+import RoadmapPage from './pages/RoadmapPage';
 import CallModal from './components/Calls/CallModal';
 import RandomMeet from './components/RandomMeet';
+import BuyMeCoffee from './components/BuyMeCoffee';
 
 // --- Firebase Config ---
 const firebaseConfig = {
@@ -272,6 +274,7 @@ function AppContent() {
                         <Route path="/chat/:conversationId" element={<ChatPage />} />
                         <Route path="/meet" element={<RandomMeet />} />
                         <Route path="/meet-call" element={<MeetCallPage />} />
+                        <Route path="/roadmap" element={<RoadmapPage />} />
                         <Route path="*" element={<Navigate to="/" replace />} />
                     </>
                 )}
@@ -285,6 +288,9 @@ function AppContent() {
                     onDecline={handleDeclineCall}
                 />
             )}
+            
+            {/* Buy Me a Coffee - Always visible */}
+            {user && <BuyMeCoffee />}
         </>
     );
 }

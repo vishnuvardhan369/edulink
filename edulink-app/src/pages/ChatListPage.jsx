@@ -9,21 +9,16 @@ const ChatListPage = () => {
     const navigate = useNavigate();
     const [conversations, setConversations] = useState([]);
     const [searchResults, setSearchResults] = useState([]);
-    const [missedCalls, setMissedCalls] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [loading, setLoading] = useState(true);
     const [searchLoading, setSearchLoading] = useState(false);
-    const [loadingMissedCalls, setLoadingMissedCalls] = useState(false);
-    const [activeTab, setActiveTab] = useState('chats'); // 'chats', 'search', or 'calls'
+    const [activeTab, setActiveTab] = useState('chats'); // 'chats' or 'search'
 
     useEffect(() => {
         if (user) {
             loadConversations();
-            if (activeTab === 'calls') {
-                loadMissedCalls();
-            }
         }
-    }, [user, activeTab]);
+    }, [user]);
 
     useEffect(() => {
         if (searchTerm.trim() && activeTab === 'search') {
@@ -35,38 +30,35 @@ const ChatListPage = () => {
 
     const loadConversations = async () => {
         try {
+            if (!user || !user.id) {
+                console.warn('⚠️ Cannot load conversations - user not available');
+                setLoading(false);
+                return;
+            }
+            
+            console.log('📥 Loading conversations for user:', user.id);
             const response = await apiCall(`/api/chats?userId=${user.id}`);
+            console.log('📡 API Response status:', response.status, response.ok);
+            
             if (response.ok) {
                 const data = await response.json();
-                setConversations(data);
+                console.log('✅ Loaded conversations:', data.length, 'conversations');
+                console.log('📋 Conversations data:', data);
+                setConversations(data || []);
             } else {
-                console.error('Failed to load conversations');
+                const errorText = await response.text();
+                console.error('❌ Failed to load conversations:', response.status, errorText);
+                setConversations([]);
             }
         } catch (error) {
-            console.error('Error loading conversations:', error);
+            console.error('💥 Error loading conversations:', error);
+            setConversations([]);
         } finally {
             setLoading(false);
         }
     };
 
-    const loadMissedCalls = async () => {
-        setLoadingMissedCalls(true);
-        try {
-            const response = await apiCall(`/api/users/${user.id}/missed-calls`);
-            if (response.ok) {
-                const data = await response.json();
-                setMissedCalls(data);
-            } else {
-                console.error('Failed to load missed calls');
-                setMissedCalls([]);
-            }
-        } catch (error) {
-            console.error('Error loading missed calls:', error);
-            setMissedCalls([]);
-        } finally {
-            setLoadingMissedCalls(false);
-        }
-    };
+
 
     const searchUsers = async () => {
         if (!searchTerm.trim()) return;
@@ -129,8 +121,34 @@ const ChatListPage = () => {
 
     const getConversationName = (conversation) => {
         if (conversation.name) return conversation.name;
-        const otherParticipant = conversation.participants?.find(p => p.user_id !== user.id);
-        return otherParticipant?.full_name || otherParticipant?.username || 'Unknown User';
+        
+        // Handle null or undefined participants
+        if (!conversation.participants || !Array.isArray(conversation.participants)) {
+            console.warn('⚠️ Conversation missing participants array:', {
+                id: conversation.conversation_id,
+                participants: conversation.participants
+            });
+            return 'Unknown User';
+        }
+        
+        // Handle empty participants array
+        if (conversation.participants.length === 0) {
+            console.warn('⚠️ Empty participants array:', conversation.conversation_id);
+            return 'Unknown User';
+        }
+        
+        const otherParticipant = conversation.participants.find(p => p.user_id !== user.id);
+        
+        if (!otherParticipant) {
+            console.warn('⚠️ No other participant found:', {
+                id: conversation.conversation_id,
+                participants: conversation.participants.map(p => ({ id: p.user_id, name: p.username })),
+                currentUser: user.id
+            });
+            return 'Unknown User';
+        }
+        
+        return otherParticipant.display_name || otherParticipant.full_name || otherParticipant.username || 'Unknown User';
     };
 
     const getLastMessagePreview = (conversation) => {
@@ -189,12 +207,6 @@ const ChatListPage = () => {
                 >
                     Find Users
                 </button>
-                <button
-                    className={`tab-button ${activeTab === 'calls' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('calls')}
-                >
-                    Missed Calls
-                </button>
             </div>            <div className="search-container">
                 <input
                     type="text"
@@ -224,30 +236,56 @@ const ChatListPage = () => {
                             </div>
                         ) : (
                             <div className="conversations-list">
-                                {conversations
-                                    .filter(conv => 
-                                        !searchTerm || 
-                                        getConversationName(conv).toLowerCase().includes(searchTerm.toLowerCase())
-                                    )
-                                    .map(conversation => (
-                                        <div
-                                            key={conversation.conversation_id}
-                                            className="conversation-item"
-                                            onClick={() => navigate(`/chat/${conversation.conversation_id}`)}
-                                        >
-                                            <div className="conversation-avatar">
-                                                <div className="avatar-circle">
-                                                    {conversation.type === 'group' ? '👥' : '👤'}
+                                    {(() => {
+                                        const filteredConvs = conversations.filter(conv => {
+                                            if (!searchTerm) return true;
+                                            const name = getConversationName(conv);
+                                            const matches = name.toLowerCase().includes(searchTerm.toLowerCase());
+                                            if (!matches) {
+                                                console.log('🚫 Filtered out:', conv.conversation_id, 'name:', name, 'searchTerm:', searchTerm);
+                                            }
+                                            return matches;
+                                        });
+                                        console.log('🎯 Rendering conversations:', {
+                                            total: conversations.length,
+                                            filtered: filteredConvs.length,
+                                            searchTerm,
+                                            activeTab,
+                                            conversationIds: filteredConvs.map(c => c.conversation_id)
+                                        });
+                                        
+                                        if (filteredConvs.length === 0 && conversations.length > 0) {
+                                            console.warn('⚠️ All conversations filtered out! Check getConversationName function');
+                                        }
+                                        
+                                        return filteredConvs;
+                                    })().map((conversation, index) => {
+                                        const convName = getConversationName(conversation);
+                                        console.log(`📋 Rendering conversation ${index + 1}:`, {
+                                            id: conversation.conversation_id,
+                                            name: convName,
+                                            participants: conversation.participants
+                                        });
+                                        
+                                        return (
+                                            <div
+                                                key={conversation.conversation_id}
+                                                className="conversation-item"
+                                                onClick={() => navigate(`/chat/${conversation.conversation_id}`)}
+                                            >
+                                                <div className="conversation-avatar">
+                                                    <div className="avatar-circle">
+                                                        {conversation.type === 'group' ? '👥' : '👤'}
+                                                    </div>
+                                                    {conversation.type === 'direct' && (
+                                                        <div className="online-indicator"></div>
+                                                    )}
                                                 </div>
-                                                {conversation.type === 'direct' && (
-                                                    <div className="online-indicator"></div>
-                                                )}
-                                            </div>
-                                            <div className="conversation-content">
-                                                <div className="conversation-header">
-                                                    <span className="conversation-name">
-                                                        {getConversationName(conversation)}
-                                                    </span>
+                                                <div className="conversation-content">
+                                                    <div className="conversation-header">
+                                                        <span className="conversation-name">
+                                                            {convName}
+                                                        </span>
                                                     <span className="last-message-time">
                                                         {formatLastMessageTime(conversation)}
                                                     </span>
@@ -264,7 +302,8 @@ const ChatListPage = () => {
                                                 </div>
                                             </div>
                                         </div>
-                                    ))
+                                        );
+                                    })
                                 }
                             </div>
                         )}
@@ -315,65 +354,6 @@ const ChatListPage = () => {
                     </div>
                 )}
 
-                {activeTab === 'calls' && (
-                    <div className="calls-section">
-                        {loadingMissedCalls ? (
-                            <div className="loading-state">Loading missed calls...</div>
-                        ) : missedCalls.length === 0 ? (
-                            <div className="no-calls">
-                                <div className="calls-icon">📞</div>
-                                <p>No missed calls</p>
-                                <small>Your missed calls will appear here</small>
-                            </div>
-                        ) : (
-                            <div className="missed-calls-list">
-                                {missedCalls.map(call => (
-                                    <div key={call.id} className="missed-call-item">
-                                        <div className="call-avatar">
-                                            <div className="avatar-circle">👤</div>
-                                        </div>
-                                        <div className="call-info">
-                                            <div className="caller-name">
-                                                {call.caller_display_name || call.caller_full_name}
-                                            </div>
-                                            <div className="call-details">
-                                                <span className="call-status">📵 Missed call</span>
-                                                <span className="call-time">
-                                                    {new Date(call.created_at).toLocaleDateString()} at {' '}
-                                                    {new Date(call.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                                                </span>
-                                            </div>
-                                        </div>
-                                        <div className="call-actions">
-                                            <button 
-                                                className="callback-btn"
-                                                onClick={() => {
-                                                    // Find or create conversation with the caller
-                                                    const existingConvo = conversations.find(
-                                                        c => c.participants?.some(p => p.id === call.caller_id)
-                                                    );
-                                                    if (existingConvo) {
-                                                        navigate(`/chat/${existingConvo.id}`);
-                                                    } else {
-                                                        // Create new conversation
-                                                        startConversation({
-                                                            id: call.caller_id,
-                                                            username: call.caller_username,
-                                                            displayName: call.caller_display_name,
-                                                            full_name: call.caller_full_name
-                                                        });
-                                                    }
-                                                }}
-                                            >
-                                                📞
-                                            </button>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                )}
             </div>
         </div>
     );
