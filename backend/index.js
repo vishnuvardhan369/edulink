@@ -320,6 +320,41 @@ io.on('connection', (socket) => {
         }
     });
 
+    // Handle joining conversation rooms
+    socket.on('conversation:join', async (conversationId) => {
+        try {
+            const userId = socket.userId;
+            if (!userId) {
+                socket.emit('error', { message: 'User not authenticated' });
+                return;
+            }
+
+            // Verify user is participant
+            const participantCheck = await client.query(
+                'SELECT 1 FROM conversation_participants WHERE conversation_id = $1 AND user_id = $2',
+                [conversationId, userId]
+            );
+
+            if (participantCheck.rows.length === 0) {
+                socket.emit('error', { message: 'Not authorized to join this conversation' });
+                return;
+            }
+
+            socket.join(conversationId);
+            console.log(`👥 User ${userId} joined conversation room ${conversationId}`);
+            socket.emit('conversation:joined', { conversationId });
+        } catch (error) {
+            console.error('❌ Error joining conversation:', error);
+            socket.emit('error', { message: 'Failed to join conversation' });
+        }
+    });
+
+    // Handle leaving conversation rooms
+    socket.on('conversation:leave', (conversationId) => {
+        socket.leave(conversationId);
+        console.log(`👋 User ${socket.userId} left conversation room ${conversationId}`);
+    });
+
     // Handle sending messages
     socket.on('message:send', async (messageData) => {
         try {
@@ -1076,13 +1111,23 @@ app.get('/api/chats', async (req, res) => {
                     AND (ms.status IS NULL OR ms.status != 'read')
                 ) as unread_count
             FROM conversations c
-            JOIN conversation_participants cp ON c.conversation_id = cp.conversation_id
-            WHERE cp.user_id = $1 AND c.is_active = true
+            WHERE c.is_active = true 
+            AND EXISTS (
+                SELECT 1 
+                FROM conversation_participants cp 
+                WHERE cp.conversation_id = c.conversation_id 
+                AND cp.user_id = $1
+            )
             ORDER BY c.updated_at DESC
         `;
 
         const result = await client.query(conversationsQuery, [userId]);
         console.log(`✅ Found ${result.rows.length} conversations for user ${userId}`);
+        
+        if (result.rows.length === 0) {
+            console.log('ℹ️  No conversations found - returning empty array');
+        }
+        
         res.status(200).send(result.rows);
     } catch (error) {
         console.error('❌ Error fetching conversations:', error.message);
@@ -1830,6 +1875,9 @@ app.post('/api/users/:userId/follow', async (req, res) => {
     try {
         const { userId: userToFollowId } = req.params;
         const { currentUserId } = req.body;
+        
+        console.log(`👥 FOLLOW action: User ${currentUserId} wants to follow ${userToFollowId}`);
+        
         if (!currentUserId || userToFollowId === currentUserId) {
             return res.status(400).send({ error: 'Invalid request.' });
         }
@@ -1849,9 +1897,10 @@ app.post('/api/users/:userId/follow', async (req, res) => {
         `;
         await client.query(insertConnectionQuery, [currentUserId, userToFollowId]);
         
+        console.log(`✅ FOLLOW successful: ${currentUserId} is now following ${userToFollowId}`);
         res.status(200).send({ message: 'Successfully followed user.' });
     } catch (error) {
-        console.error('Error following user:', error);
+        console.error('❌ Error in FOLLOW:', error);
         res.status(500).send({ error: 'Failed to follow user.' });
     }
 });
@@ -1879,6 +1928,8 @@ app.post('/api/users/:userId/request-connect', async (req, res) => {
     try {
         const { userId: recipientId } = req.params;
         const { currentUserId: senderId } = req.body;
+        
+        console.log(`🤝 REQUEST-CONNECT action: User ${senderId} wants to connect with ${recipientId}`);
         
         if (!senderId || recipientId === senderId) {
             return res.status(400).json({ error: 'Invalid request.' });
@@ -1940,6 +1991,21 @@ app.post('/api/users/:userId/request-connect', async (req, res) => {
             
             await client.query('COMMIT');
             
+            // Emit real-time notification via Socket.IO
+            if (io) {
+                io.to(recipientId).emit('notification:new', {
+                    notification_id: notificationResult.rows[0].notification_id,
+                    user_id: recipientId,
+                    type: 'connection_request',
+                    title: 'New Connection Request',
+                    message: `${senderName} wants to connect with you`,
+                    related_user_id: senderId,
+                    is_read: false,
+                    created_at: new Date().toISOString()
+                });
+                console.log(`🔔 Emitted connection request notification to user ${recipientId}`);
+            }
+            
             res.status(200).json({ 
                 message: 'Connection request sent successfully',
                 requestId: requestResult.rows[0].id,
@@ -1962,7 +2028,10 @@ app.post('/api/users/:userId/accept-connect', async (req, res) => {
         const { userId: senderId } = req.params;
         const { currentUserId: recipientId } = req.body;
         
+        console.log(`✅ ACCEPT-CONNECT: Recipient ${recipientId} accepting request from ${senderId}`);
+        
         if (!recipientId || senderId === recipientId) {
+            console.log('❌ ACCEPT-CONNECT: Invalid request - missing or same user IDs');
             return res.status(400).json({ error: 'Invalid request.' });
         }
         
@@ -1971,10 +2040,14 @@ app.post('/api/users/:userId/accept-connect', async (req, res) => {
             WHERE sender_id = $1 AND recipient_id = $2
         `;
         const requestResult = await client.query(checkRequestQuery, [senderId, recipientId]);
+        console.log(`🔍 ACCEPT-CONNECT: Found ${requestResult.rows.length} matching connection requests`);
         
         if (requestResult.rows.length === 0) {
+            console.log('❌ ACCEPT-CONNECT: Connection request not found in database');
             return res.status(404).json({ error: 'Connection request not found.' });
         }
+        
+        console.log('✅ ACCEPT-CONNECT: Connection request found, proceeding with acceptance');
         
         await client.query('BEGIN');
         
@@ -2000,8 +2073,9 @@ app.post('/api/users/:userId/accept-connect', async (req, res) => {
             const notificationQuery = `
                 INSERT INTO notifications (user_id, type, title, message, related_user_id, is_read, created_at)
                 VALUES ($1, $2, $3, $4, $5, $6, NOW())
+                RETURNING notification_id
             `;
-            await client.query(notificationQuery, [
+            const notificationResult = await client.query(notificationQuery, [
                 senderId,
                 'connection_accepted',
                 'Connection Request Accepted',
@@ -2012,13 +2086,30 @@ app.post('/api/users/:userId/accept-connect', async (req, res) => {
             
             await client.query('COMMIT');
             
+            // Emit real-time notification via Socket.IO
+            if (io) {
+                io.to(senderId).emit('notification:new', {
+                    notification_id: notificationResult.rows[0].notification_id,
+                    user_id: senderId,
+                    type: 'connection_accepted',
+                    title: 'Connection Request Accepted',
+                    message: `${recipientName} accepted your connection request`,
+                    related_user_id: recipientId,
+                    is_read: false,
+                    created_at: new Date().toISOString()
+                });
+                console.log(`🔔 Emitted connection accepted notification to user ${senderId}`);
+            }
+            
+            console.log(`✅ ACCEPT-CONNECT: Successfully accepted connection between ${recipientId} and ${senderId}`);
             res.status(200).json({ message: 'Connection accepted successfully.' });
         } catch (error) {
             await client.query('ROLLBACK');
+            console.error('❌ ACCEPT-CONNECT: Transaction error:', error);
             throw error;
         }
     } catch (error) {
-        console.error('Error accepting connection:', error);
+        console.error('❌ ACCEPT-CONNECT: Error accepting connection:', error);
         res.status(500).json({ error: 'Failed to accept connection: ' + error.message });
     }
 });
@@ -2046,7 +2137,11 @@ app.post('/api/users/:userId/reject-request', async (req, res) => {
     try {
         const { userId: senderId } = req.params;
         const { currentUserId: recipientId } = req.body;
+        
+        console.log(`❌ REJECT-REQUEST: Recipient ${recipientId} rejecting request from ${senderId}`);
+        
         if (!recipientId || senderId === recipientId) {
+            console.log('❌ REJECT-REQUEST: Invalid request');
             return res.status(400).send({ error: 'Invalid request.' });
         }
         
@@ -2054,11 +2149,12 @@ app.post('/api/users/:userId/reject-request', async (req, res) => {
             DELETE FROM connection_requests 
             WHERE sender_id = $1 AND recipient_id = $2
         `;
-        await client.query(deleteRequestQuery, [senderId, recipientId]);
+        const result = await client.query(deleteRequestQuery, [senderId, recipientId]);
         
+        console.log(`✅ REJECT-REQUEST: Deleted ${result.rowCount} connection request(s)`);
         res.status(200).send({ message: 'Request rejected.' });
     } catch (error) {
-        console.error('Error rejecting request:', error);
+        console.error('❌ REJECT-REQUEST: Error rejecting request:', error);
         res.status(500).send({ error: 'Failed to reject request.' });
     }
 });
@@ -2801,6 +2897,220 @@ app.get('/api/chats/:chatId/messages', async (req, res) => {
     }
 });
 
+// ===========================
+// 🤖 AI ROADMAP GENERATION ROUTES
+// ===========================
+
+const { generateRoadmap, generateLearningTips } = require('./gemini-service');
+
+// Generate AI-powered learning roadmap
+app.post('/api/roadmap/generate', async (req, res) => {
+    try {
+        const { topic, currentLevel, goalLevel, timeframe, preferences } = req.body;
+
+        if (!topic) {
+            return res.status(400).json({ error: 'Topic is required' });
+        }
+
+        console.log(`🤖 ===== GEMINI API ROADMAP GENERATION =====`);
+        console.log(`📚 Topic: ${topic}`);
+        console.log(`📊 Level: ${currentLevel} → ${goalLevel}`);
+        console.log(`⏱️  Timeframe: ${timeframe}`);
+        console.log(`🎯 Preferences: ${(preferences || []).join(', ') || 'None'}`);
+        console.log(`🔑 API Key Status: ${process.env.GEMINI_API_KEY ? 'Using ENV variable' : 'Using hardcoded fallback'}`);
+
+        const result = await generateRoadmap({
+            topic,
+            currentLevel: currentLevel || 'beginner',
+            goalLevel: goalLevel || 'professional',
+            timeframe: timeframe || '6 months',
+            preferences: preferences || []
+        });
+
+        if (result.success) {
+            console.log(`✅ Roadmap generated successfully using Gemini AI`);
+            console.log(`📋 Phases: ${result.roadmap.phases?.length || 0}`);
+            console.log(`🎯 Milestones: ${result.roadmap.milestones?.length || 0}`);
+        } else {
+            console.log(`⚠️ Gemini API failed, using fallback roadmap`);
+            console.log(`❌ Error: ${result.error}`);
+        }
+        console.log(`========================================`);
+
+        res.json(result);
+    } catch (error) {
+        console.error('❌ CRITICAL ERROR in roadmap generation:', error);
+        console.error('Stack:', error.stack);
+        res.status(500).json({ 
+            error: 'Failed to generate roadmap',
+            message: error.message 
+        });
+    }
+});
+
+// Generate personalized learning tips
+app.post('/api/roadmap/tips', async (req, res) => {
+    try {
+        const { topic, currentProgress, strugglingAreas } = req.body;
+
+        if (!topic) {
+            return res.status(400).json({ error: 'Topic is required' });
+        }
+
+        console.log(`💡 Generating tips for: ${topic}`);
+
+        const result = await generateLearningTips(
+            topic,
+            currentProgress || 'Just started',
+            strugglingAreas || []
+        );
+
+        res.json(result);
+    } catch (error) {
+        console.error('❌ Error generating tips:', error);
+        res.status(500).json({ 
+            error: 'Failed to generate tips',
+            message: error.message 
+        });
+    }
+});
+
+// Save roadmap to user profile
+app.post('/api/roadmap/save', async (req, res) => {
+    try {
+        const token = req.headers.authorization?.split('Bearer ')[1];
+        if (!token) return res.status(401).json({ error: 'Unauthorized' });
+
+        const decodedToken = await admin.auth().verifyIdToken(token);
+        const userId = decodedToken.uid;
+
+        const { roadmap, topic } = req.body;
+
+        if (!roadmap || !topic) {
+            return res.status(400).json({ error: 'Roadmap and topic are required' });
+        }
+
+        // Create roadmaps table if it doesn't exist
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS roadmaps (
+                id SERIAL PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                topic TEXT NOT NULL,
+                roadmap JSONB NOT NULL,
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            )
+        `);
+
+        // Save roadmap
+        const result = await client.query(
+            'INSERT INTO roadmaps (user_id, topic, roadmap) VALUES ($1, $2, $3) RETURNING id',
+            [userId, topic, JSON.stringify(roadmap)]
+        );
+
+        console.log(`💾 Saved roadmap for user ${userId}: ${topic}`);
+
+        res.json({ 
+            success: true, 
+            roadmapId: result.rows[0].id,
+            message: 'Roadmap saved successfully'
+        });
+    } catch (error) {
+        console.error('❌ Error saving roadmap:', error);
+        res.status(500).json({ 
+            error: 'Failed to save roadmap',
+            message: error.message 
+        });
+    }
+});
+
+// Get user's saved roadmaps
+app.get('/api/roadmap/my-roadmaps', async (req, res) => {
+    try {
+        const token = req.headers.authorization?.split('Bearer ')[1];
+        if (!token) return res.status(401).json({ error: 'Unauthorized' });
+
+        const decodedToken = await admin.auth().verifyIdToken(token);
+        const userId = decodedToken.uid;
+
+        const result = await client.query(
+            'SELECT * FROM roadmaps WHERE user_id = $1 ORDER BY created_at DESC',
+            [userId]
+        );
+
+        res.json({ 
+            success: true,
+            roadmaps: result.rows 
+        });
+    } catch (error) {
+        console.error('❌ Error fetching roadmaps:', error);
+        res.status(500).json({ 
+            error: 'Failed to fetch roadmaps',
+            message: error.message 
+        });
+    }
+});
+
+// Get specific roadmap by ID
+app.get('/api/roadmap/:id', async (req, res) => {
+    try {
+        const token = req.headers.authorization?.split('Bearer ')[1];
+        if (!token) return res.status(401).json({ error: 'Unauthorized' });
+
+        const decodedToken = await admin.auth().verifyIdToken(token);
+        const userId = decodedToken.uid;
+        const roadmapId = req.params.id;
+
+        const result = await client.query(
+            'SELECT * FROM roadmaps WHERE id = $1 AND user_id = $2',
+            [roadmapId, userId]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Roadmap not found' });
+        }
+
+        res.json({ 
+            success: true,
+            roadmap: result.rows[0]
+        });
+    } catch (error) {
+        console.error('❌ Error fetching roadmap:', error);
+        res.status(500).json({ 
+            error: 'Failed to fetch roadmap',
+            message: error.message 
+        });
+    }
+});
+
+// Delete roadmap
+app.delete('/api/roadmap/:id', async (req, res) => {
+    try {
+        const token = req.headers.authorization?.split('Bearer ')[1];
+        if (!token) return res.status(401).json({ error: 'Unauthorized' });
+
+        const decodedToken = await admin.auth().verifyIdToken(token);
+        const userId = decodedToken.uid;
+        const roadmapId = req.params.id;
+
+        await client.query(
+            'DELETE FROM roadmaps WHERE id = $1 AND user_id = $2',
+            [roadmapId, userId]
+        );
+
+        res.json({ 
+            success: true,
+            message: 'Roadmap deleted successfully'
+        });
+    } catch (error) {
+        console.error('❌ Error deleting roadmap:', error);
+        res.status(500).json({ 
+            error: 'Failed to delete roadmap',
+            message: error.message 
+        });
+    }
+});
+
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 EduLink Backend Server Started!`);
   console.log(`📍 Environment: ${isDevelopment ? 'Development' : isAzure ? 'Azure Cloud' : 'Production'}`);
@@ -2812,5 +3122,6 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`🔐 Auth: Firebase Admin SDK`);
   console.log(`💬 Chat: Socket.IO Real-time`);
   console.log(`📞 Calls: WebRTC P2P`);
+  console.log(`🤖 AI Roadmaps: Google Gemini API`);
   console.log('✅ Ready to accept requests!');
 });

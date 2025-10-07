@@ -107,7 +107,7 @@ export default function CreatePoll({ onPollCreated }) {
             
             <form onSubmit={handleSubmit}>
                 <div className="form-group">
-                    <label htmlFor="poll-question" className="form-label">
+                    <label htmlFor="poll-question" className="form-label" style={{ color: 'var(--text-primary)' }}>
                         Poll Question *
                     </label>
                     <input
@@ -118,12 +118,13 @@ export default function CreatePoll({ onPollCreated }) {
                         placeholder="What would you like to ask?"
                         className="form-control"
                         maxLength="200"
+                        style={{ color: 'var(--text-primary)', backgroundColor: 'var(--bg-primary)' }}
                     />
-                    <small className="text-muted">{question.length}/200 characters</small>
+                    <small className="text-muted" style={{ color: 'var(--text-secondary)' }}>{question.length}/200 characters</small>
                 </div>
                 
                 <div className="form-group">
-                    <label htmlFor="poll-description" className="form-label">
+                    <label htmlFor="poll-description" className="form-label" style={{ color: 'var(--text-primary)' }}>
                         Description (Optional)
                     </label>
                     <textarea
@@ -134,12 +135,13 @@ export default function CreatePoll({ onPollCreated }) {
                         rows="3"
                         className="form-control"
                         maxLength="500"
+                        style={{ color: 'var(--text-primary)', backgroundColor: 'var(--bg-primary)' }}
                     />
-                    <small className="text-muted">{description.length}/500 characters</small>
+                    <small className="text-muted" style={{ color: 'var(--text-secondary)' }}>{description.length}/500 characters</small>
                 </div>
                 
                 <div className="form-group">
-                    <label className="form-label">
+                    <label className="form-label" style={{ color: 'var(--text-primary)' }}>
                         Poll Options * (2-20 options)
                     </label>
                     <div className="poll-options-container">
@@ -152,6 +154,7 @@ export default function CreatePoll({ onPollCreated }) {
                                     placeholder={`Option ${index + 1}`}
                                     className="form-control"
                                     maxLength="100"
+                                    style={{ color: 'var(--text-primary)', backgroundColor: 'var(--bg-primary)' }}
                                 />
                                 {options.length > 2 && (
                                     <button
@@ -182,7 +185,7 @@ export default function CreatePoll({ onPollCreated }) {
                 <div className="form-group">
                     <div className="poll-settings">
                         <div className="setting-item">
-                            <label className="checkbox-label">
+                            <label className="checkbox-label" style={{ color: 'var(--text-primary)' }}>
                                 <input
                                     type="checkbox"
                                     checked={allowMultipleVotes}
@@ -193,7 +196,7 @@ export default function CreatePoll({ onPollCreated }) {
                         </div>
                         
                         <div className="setting-item">
-                            <label className="checkbox-label">
+                            <label className="checkbox-label" style={{ color: 'var(--text-primary)' }}>
                                 <input
                                     type="checkbox"
                                     checked={hasExpiry}
@@ -204,7 +207,7 @@ export default function CreatePoll({ onPollCreated }) {
                             
                             {hasExpiry && (
                                 <div className="expiry-settings">
-                                    <label htmlFor="expiry-days" className="form-label">
+                                    <label htmlFor="expiry-days" className="form-label" style={{ color: 'var(--text-primary)' }}>
                                         Poll expires in:
                                     </label>
                                     <select
@@ -212,7 +215,7 @@ export default function CreatePoll({ onPollCreated }) {
                                         value={expiryDays}
                                         onChange={(e) => setExpiryDays(Number(e.target.value))}
                                         className="form-control"
-                                        style={{ width: 'auto', display: 'inline-block' }}
+                                        style={{ width: 'auto', display: 'inline-block', color: 'var(--text-primary)', backgroundColor: 'var(--bg-primary)' }}
                                     >
                                         <option value={1}>1 day</option>
                                         <option value={3}>3 days</option>
@@ -234,7 +237,7 @@ export default function CreatePoll({ onPollCreated }) {
                 
                 <div className="d-flex justify-content-between align-items-center">
                     <div className="poll-summary">
-                        <small className="text-muted">
+                        <small className="text-muted" style={{ color: 'var(--text-secondary)' }}>
                             {options.filter(opt => opt.trim()).length} options • 
                             {allowMultipleVotes ? ' Multiple votes' : ' Single vote'} • 
                             {hasExpiry ? ` Expires in ${expiryDays} days` : ' No expiration'}

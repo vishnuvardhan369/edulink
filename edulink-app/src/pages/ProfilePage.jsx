@@ -52,12 +52,41 @@ export default function ProfilePage({ currentUserData, onProfileUpdate }) {
     const currentUser = auth.currentUser;
     const AZURE_STORAGE_ACCOUNT_NAME = "edulinkdata";
 
+    // Helper function to ensure skills is always an array
+    const normalizeSkills = (skills) => {
+        if (!skills) return [];
+        if (Array.isArray(skills)) return skills;
+        if (typeof skills === 'string') {
+            try {
+                const parsed = JSON.parse(skills);
+                return Array.isArray(parsed) ? parsed : [];
+            } catch {
+                return [];
+            }
+        }
+        return [];
+    };
+
+    // Helper function to ensure socialLinks is always an object
+    const normalizeSocialLinks = (socialLinks) => {
+        if (!socialLinks) return { linkedin: '', github: '' };
+        if (typeof socialLinks === 'string') {
+            try {
+                const parsed = JSON.parse(socialLinks);
+                return { linkedin: parsed.linkedin || '', github: parsed.github || '' };
+            } catch {
+                return { linkedin: '', github: '' };
+            }
+        }
+        return { linkedin: socialLinks.linkedin || '', github: socialLinks.github || '' };
+    };
+
     React.useEffect(() => {
         if (viewedUserData) {
             setEditFormData({
                 ...viewedUserData,
-                skills: viewedUserData.skills || [],
-                socialLinks: viewedUserData.socialLinks || { linkedin: '', github: '' }
+                skills: normalizeSkills(viewedUserData.skills),
+                socialLinks: normalizeSocialLinks(viewedUserData.socialLinks)
             });
         }
     }, [viewedUserData]);
@@ -155,8 +184,13 @@ export default function ProfilePage({ currentUserData, onProfileUpdate }) {
         setEditFormData(prev => ({ ...prev, [name]: value }));
     };
     const handleSkillsChange = (e) => {
-        const skillsArray = e.target.value.split(',').map(skill => skill.trim()).filter(skill => skill);
-        setEditFormData(prev => ({ ...prev, skills: skillsArray }));
+        const value = e.target.value;
+        if (value.trim() === '') {
+            setEditFormData(prev => ({ ...prev, skills: [] }));
+        } else {
+            const skillsArray = value.split(',').map(skill => skill.trim()).filter(skill => skill);
+            setEditFormData(prev => ({ ...prev, skills: skillsArray }));
+        }
     };
     const handleSocialChange = (e) => {
         const { name, value } = e.target;
@@ -180,49 +214,119 @@ export default function ProfilePage({ currentUserData, onProfileUpdate }) {
             console.log('ProfilePage: Saving data:', dataToSave);
             const saveResponse = await apiCall(`/api/users/${auth.currentUser.uid}`, {
                 method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(dataToSave)
             });
             console.log('ProfilePage: Save response status:', saveResponse.status);
             if (!saveResponse.ok) {
-                const errorText = await saveResponse.text();
-                console.error('ProfilePage: Save error:', errorText);
-                throw new Error('Failed to save profile');
+                const errorData = await saveResponse.json();
+                console.error('ProfilePage: Save error:', errorData);
+                throw new Error(errorData.error || 'Failed to save profile');
             }
+            const updatedData = await saveResponse.json();
+            console.log('ProfilePage: Updated successfully:', updatedData);
             await refetch();
+            await onProfileUpdate();
             setIsEditing(false);
-            alert('Profile updated successfully!');
+            alert('✅ Profile updated successfully!');
         } catch (error) {
-            alert('Failed to update profile.');
+            console.error('ProfilePage: Save failed:', error);
+            alert('❌ Failed to update profile: ' + error.message);
         }
     };
 
     if (isEditing && isOwnProfile) {
         // --- EDIT MODE ---
+        if (!editFormData) {
+            return <div>Loading...</div>;
+        }
+        
         return (
-            <div style={{ padding: '20px', maxWidth: '600px', margin: 'auto' }}>
-                <h2>Edit Profile</h2>
-                <img src={editFormData.profilePictureUrl} alt={editFormData.displayName} style={{width: 100, height: 100, borderRadius: '50%'}} />
-                <input type="file" accept="image/*" ref={fileInputRef} onChange={handlePictureUpload} style={{ display: 'none' }} />
-                <button onClick={() => fileInputRef.current.click()} disabled={uploading}>
-                    {uploading ? 'Uploading...' : 'Change Picture'}
-                </button>
-                <hr style={{ margin: '20px 0' }}/>
-                <label>Display Name:</label><br />
-                <input type="text" name="displayName" value={editFormData.displayName || ''} onChange={handleInputChange} style={{width: '100%', padding: '8px'}}/><br /><br />
-                <label>Headline:</label><br />
-                <input type="text" name="headline" value={editFormData.headline || ''} onChange={handleInputChange} placeholder="e.g., Software Engineer" style={{width: '100%', padding: '8px'}}/><br /><br />
-                <label>Bio:</label><br />
-                <textarea name="bio" value={editFormData.bio || ''} onChange={handleInputChange} rows="4" style={{width: '100%', padding: '8px'}}></textarea><br /><br />
-                <label>Location:</label><br />
-                <input type="text" name="location" value={editFormData.location || ''} onChange={handleInputChange} placeholder="e.g., San Francisco, CA" style={{width: '100%', padding: '8px'}}/><br /><br />
-                <label>Skills (comma-separated):</label><br />
-                <input type="text" defaultValue={(editFormData.skills || []).join(', ')} onChange={handleSkillsChange} style={{width: '100%', padding: '8px'}}/><br /><br />
-                <label>LinkedIn Profile URL:</label><br />
-                <input type="text" name="linkedin" value={editFormData.socialLinks?.linkedin || ''} onChange={handleSocialChange} style={{width: '100%', padding: '8px'}}/><br /><br />
-                <label>GitHub Profile URL:</label><br />
-                <input type="text" name="github" value={editFormData.socialLinks?.github || ''} onChange={handleSocialChange} style={{width: '100%', padding: '8px'}}/><br /><br />
-                <button onClick={handleSave} style={{padding: '10px 20px', marginRight: '10px'}}>Save Changes</button>
-                <button onClick={() => setIsEditing(false)} style={{padding: '10px 20px'}}>Cancel</button>
+            <div className="edulink-app">
+                <nav className="navbar">
+                    <div className="navbar-content">
+                        <button onClick={() => setIsEditing(false)} className="btn btn-secondary">
+                            ← Cancel
+                        </button>
+                        <a href="#" className="navbar-brand">Edit Profile</a>
+                    </div>
+                </nav>
+                
+                <div className="content-area" style={{ padding: 'var(--spacing-lg)', maxWidth: '100%', margin: '0' }}>
+                    <div className="card fade-in" style={{ maxWidth: '800px', margin: '0 auto', padding: 'var(--spacing-xl)' }}>
+                        <h2 style={{ color: 'var(--text-primary)', marginBottom: 'var(--spacing-lg)' }}>✏️ Edit Profile</h2>
+                        
+                        {/* Profile Picture Section */}
+                        <div style={{ textAlign: 'center', marginBottom: 'var(--spacing-xl)', paddingBottom: 'var(--spacing-lg)', borderBottom: '1px solid var(--border-color)' }}>
+                            <img src={editFormData.profilePictureUrl} alt={editFormData.displayName} 
+                                 style={{width: 120, height: 120, borderRadius: '50%', marginBottom: 'var(--spacing-md)', border: '3px solid var(--border-color)'}} />
+                            <br />
+                            <input type="file" accept="image/*" ref={fileInputRef} onChange={handlePictureUpload} style={{ display: 'none' }} />
+                            <button className="btn btn-secondary" onClick={() => fileInputRef.current.click()} disabled={uploading}>
+                                {uploading ? '⏳ Uploading...' : '📷 Change Picture'}
+                            </button>
+                        </div>
+                        
+                        {/* Form Fields */}
+                        <div className="form-group">
+                            <label className="form-label" style={{ color: 'var(--text-primary)', fontWeight: 'var(--font-weight-medium)' }}>Display Name *</label>
+                            <input type="text" name="displayName" value={editFormData.displayName || ''} onChange={handleInputChange} 
+                                   className="form-control" placeholder="Your full name" />
+                        </div>
+                        
+                        <div className="form-group">
+                            <label className="form-label" style={{ color: 'var(--text-primary)', fontWeight: 'var(--font-weight-medium)' }}>Headline</label>
+                            <input type="text" name="headline" value={editFormData.headline || ''} onChange={handleInputChange} 
+                                   placeholder="e.g., Software Engineer | Student | Designer" className="form-control" />
+                        </div>
+                        
+                        <div className="form-group">
+                            <label className="form-label" style={{ color: 'var(--text-primary)', fontWeight: 'var(--font-weight-medium)' }}>Bio</label>
+                            <textarea name="bio" value={editFormData.bio || ''} onChange={handleInputChange} rows="5" 
+                                      className="form-control" placeholder="Tell us about yourself..."></textarea>
+                        </div>
+                        
+                        <div className="form-group">
+                            <label className="form-label" style={{ color: 'var(--text-primary)', fontWeight: 'var(--font-weight-medium)' }}>Location</label>
+                            <input type="text" name="location" value={editFormData.location || ''} onChange={handleInputChange} 
+                                   placeholder="e.g., San Francisco, CA" className="form-control" />
+                        </div>
+                        
+                        <div className="form-group">
+                            <label className="form-label" style={{ color: 'var(--text-primary)', fontWeight: 'var(--font-weight-medium)' }}>Skills (comma-separated)</label>
+                            <input type="text" 
+                                   value={Array.isArray(editFormData.skills) ? editFormData.skills.join(', ') : ''} 
+                                   onChange={handleSkillsChange} 
+                                   className="form-control" 
+                                   placeholder="e.g., JavaScript, React, Node.js" />
+                            <small style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-size-xs)' }}>
+                                Separate skills with commas
+                            </small>
+                        </div>
+                        
+                        <div className="form-group">
+                            <label className="form-label" style={{ color: 'var(--text-primary)', fontWeight: 'var(--font-weight-medium)' }}>💼 LinkedIn Profile URL</label>
+                            <input type="text" name="linkedin" value={editFormData.socialLinks?.linkedin || ''} onChange={handleSocialChange} 
+                                   className="form-control" placeholder="https://linkedin.com/in/username" />
+                        </div>
+                        
+                        <div className="form-group">
+                            <label className="form-label" style={{ color: 'var(--text-primary)', fontWeight: 'var(--font-weight-medium)' }}>💻 GitHub Profile URL</label>
+                            <input type="text" name="github" value={editFormData.socialLinks?.github || ''} onChange={handleSocialChange} 
+                                   className="form-control" placeholder="https://github.com/username" />
+                        </div>
+                        
+                        {/* Action Buttons */}
+                        <div style={{ display: 'flex', gap: 'var(--spacing-md)', marginTop: 'var(--spacing-xl)', paddingTop: 'var(--spacing-lg)', borderTop: '1px solid var(--border-color)' }}>
+                            <button onClick={handleSave} className="btn btn-primary" style={{flex: 1}}>
+                                💾 Save Changes
+                            </button>
+                            <button onClick={() => setIsEditing(false)} className="btn btn-secondary" style={{flex: 1}}>
+                                ❌ Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
             </div>
         );
     }
@@ -306,10 +410,11 @@ export default function ProfilePage({ currentUserData, onProfileUpdate }) {
                 <div className="card fade-in" style={{ maxWidth: '1200px', margin: '0 auto' }}>
                     {/* Profile Header - Enhanced */}
                     <div className="profile-header" style={{ 
-                        background: 'linear-gradient(135deg, var(--primary-50) 0%, var(--primary-100) 100%)',
+                        background: 'linear-gradient(135deg, var(--primary-color) 0%, var(--primary-light) 100%)',
                         padding: 'var(--spacing-xl)',
                         borderRadius: 'var(--border-radius-lg) var(--border-radius-lg) 0 0',
-                        marginBottom: 'var(--spacing-lg)'
+                        marginBottom: 'var(--spacing-lg)',
+                        color: 'white'
                     }}>
                         <div className="profile-info" style={{ 
                             display: 'flex', 
@@ -335,13 +440,13 @@ export default function ProfilePage({ currentUserData, onProfileUpdate }) {
                                     fontSize: '2.5rem', 
                                     fontWeight: 'var(--font-weight-bold)',
                                     margin: '0 0 var(--spacing-sm) 0',
-                                    color: 'var(--text-primary)'
+                                    color: 'white'
                                 }}>
                                     {viewedUserData.displayName}
                                 </h1>
                                 <p className="username" style={{ 
                                     fontSize: 'var(--font-size-lg)', 
-                                    opacity: 0.8,
+                                    color: 'rgba(255, 255, 255, 0.95)',
                                     margin: '0 0 var(--spacing-md) 0'
                                 }}>
                                     @{viewedUserData.username}
@@ -349,7 +454,7 @@ export default function ProfilePage({ currentUserData, onProfileUpdate }) {
                                 {viewedUserData.headline && (
                                     <p style={{ 
                                         fontSize: 'var(--font-size-lg)', 
-                                        opacity: 0.9, 
+                                        color: 'rgba(255, 255, 255, 0.95)',
                                         margin: '0 0 var(--spacing-md) 0',
                                         fontStyle: 'italic'
                                     }}>
@@ -366,11 +471,11 @@ export default function ProfilePage({ currentUserData, onProfileUpdate }) {
                                             display: 'block',
                                             fontSize: '1.5rem',
                                             fontWeight: 'var(--font-weight-bold)',
-                                            color: 'var(--primary-600)'
+                                            color: 'white'
                                         }}>
                                             {followers.length}
                                         </span>
-                                        <span className="profile-stat-label" style={{ fontSize: 'var(--font-size-sm)' }}>
+                                        <span className="profile-stat-label" style={{ fontSize: 'var(--font-size-sm)', color: 'rgba(255, 255, 255, 0.9)' }}>
                                             Followers
                                         </span>
                                     </div>
@@ -379,11 +484,11 @@ export default function ProfilePage({ currentUserData, onProfileUpdate }) {
                                             display: 'block',
                                             fontSize: '1.5rem',
                                             fontWeight: 'var(--font-weight-bold)',
-                                            color: 'var(--primary-600)'
+                                            color: 'white'
                                         }}>
                                             {following.length}
                                         </span>
-                                        <span className="profile-stat-label" style={{ fontSize: 'var(--font-size-sm)' }}>
+                                        <span className="profile-stat-label" style={{ fontSize: 'var(--font-size-sm)', color: 'rgba(255, 255, 255, 0.9)' }}>
                                             Following
                                         </span>
                                     </div>
@@ -417,8 +522,8 @@ export default function ProfilePage({ currentUserData, onProfileUpdate }) {
                                     <div className="info-section" style={{ 
                                         marginBottom: 'var(--spacing-lg)',
                                         padding: 'var(--spacing-lg)',
-                                        backgroundColor: 'var(--surface-secondary)',
-                                        borderRadius: 'var(--border-radius-md)',
+                                        backgroundColor: 'var(--bg-secondary)',
+                                        borderRadius: 'var(--border-radius-lg)',
                                         border: '1px solid var(--border-color)'
                                     }}>
                                         <h3 style={{ 
@@ -432,7 +537,8 @@ export default function ProfilePage({ currentUserData, onProfileUpdate }) {
                                         <p style={{ 
                                             fontSize: 'var(--font-size-md)', 
                                             lineHeight: 1.6,
-                                            margin: 0
+                                            margin: 0,
+                                            color: 'var(--text-primary)'
                                         }}>
                                             {viewedUserData.bio}
                                         </p>
@@ -444,8 +550,8 @@ export default function ProfilePage({ currentUserData, onProfileUpdate }) {
                                     <div className="info-section" style={{ 
                                         marginBottom: 'var(--spacing-lg)',
                                         padding: 'var(--spacing-lg)',
-                                        backgroundColor: 'var(--surface-secondary)',
-                                        borderRadius: 'var(--border-radius-md)',
+                                        backgroundColor: 'var(--bg-secondary)',
+                                        borderRadius: 'var(--border-radius-lg)',
                                         border: '1px solid var(--border-color)'
                                     }}>
                                         <h3 style={{ 
@@ -456,7 +562,7 @@ export default function ProfilePage({ currentUserData, onProfileUpdate }) {
                                         }}>
                                             📍 Location
                                         </h3>
-                                        <p style={{ margin: 0, fontSize: 'var(--font-size-md)' }}>
+                                        <p style={{ margin: 0, fontSize: 'var(--font-size-md)', color: 'var(--text-primary)' }}>
                                             {viewedUserData.location}
                                         </p>
                                     </div>
@@ -466,72 +572,77 @@ export default function ProfilePage({ currentUserData, onProfileUpdate }) {
                             {/* Right Column */}
                             <div>
                                 {/* Skills */}
-                                {viewedUserData.skills && viewedUserData.skills.length > 0 && (
-                                    <div className="info-section" style={{ 
-                                        marginBottom: 'var(--spacing-lg)',
-                                        padding: 'var(--spacing-lg)',
-                                        backgroundColor: 'var(--surface-secondary)',
-                                        borderRadius: 'var(--border-radius-md)',
-                                        border: '1px solid var(--border-color)'
-                                    }}>
-                                        <h3 style={{ 
-                                            marginBottom: 'var(--spacing-md)',
-                                            color: 'var(--text-primary)',
-                                            fontSize: 'var(--font-size-lg)',
-                                            fontWeight: 'var(--font-weight-semibold)'
+                                {(() => {
+                                    const skills = normalizeSkills(viewedUserData.skills);
+                                    return skills.length > 0 && (
+                                        <div className="info-section" style={{ 
+                                            marginBottom: 'var(--spacing-lg)',
+                                            padding: 'var(--spacing-lg)',
+                                            backgroundColor: 'var(--bg-secondary)',
+                                            borderRadius: 'var(--border-radius-lg)',
+                                            border: '1px solid var(--border-color)'
                                         }}>
-                                            🛠️ Skills
-                                        </h3>
-                                        <div className="skills-container" style={{ 
-                                            display: 'flex',
-                                            flexWrap: 'wrap',
-                                            gap: 'var(--spacing-sm)'
-                                        }}>
-                                            {viewedUserData.skills.map((skill, index) => (
-                                                <span key={index} className="skill-tag" style={{
-                                                    padding: 'var(--spacing-xs) var(--spacing-sm)',
-                                                    backgroundColor: 'var(--primary-100)',
-                                                    color: 'var(--primary-700)',
-                                                    borderRadius: 'var(--border-radius-sm)',
-                                                    fontSize: 'var(--font-size-sm)',
-                                                    fontWeight: 'var(--font-weight-medium)',
-                                                    border: '1px solid var(--primary-200)'
-                                                }}>
-                                                    {skill}
-                                                </span>
-                                            ))}
+                                            <h3 style={{ 
+                                                marginBottom: 'var(--spacing-md)',
+                                                color: 'var(--text-primary)',
+                                                fontSize: 'var(--font-size-lg)',
+                                                fontWeight: 'var(--font-weight-semibold)'
+                                            }}>
+                                                🛠️ Skills
+                                            </h3>
+                                            <div className="skills-container" style={{ 
+                                                display: 'flex',
+                                                flexWrap: 'wrap',
+                                                gap: 'var(--spacing-sm)'
+                                            }}>
+                                                {skills.map((skill, index) => (
+                                                    <span key={index} className="skill-tag" style={{
+                                                        padding: 'var(--spacing-xs) var(--spacing-sm)',
+                                                        backgroundColor: 'var(--bg-tertiary)',
+                                                        color: 'var(--primary-color)',
+                                                        borderRadius: 'var(--border-radius)',
+                                                        fontSize: 'var(--font-size-sm)',
+                                                        fontWeight: 'var(--font-weight-medium)',
+                                                        border: '1px solid var(--border-color)'
+                                                    }}>
+                                                        {skill}
+                                                    </span>
+                                                ))}
+                                            </div>
                                         </div>
-                                    </div>
-                                )}
+                                    );
+                                })()}
                                 
                                 {/* Social Links */}
-                                {viewedUserData.socialLinks && (viewedUserData.socialLinks.linkedin || viewedUserData.socialLinks.github) && (
-                                    <div className="info-section" style={{ 
-                                        marginBottom: 'var(--spacing-lg)',
-                                        padding: 'var(--spacing-lg)',
-                                        backgroundColor: 'var(--surface-secondary)',
-                                        borderRadius: 'var(--border-radius-md)',
-                                        border: '1px solid var(--border-color)'
-                                    }}>
-                                        <h3 style={{ 
-                                            marginBottom: 'var(--spacing-md)',
-                                            color: 'var(--text-primary)',
-                                            fontSize: 'var(--font-size-lg)',
-                                            fontWeight: 'var(--font-weight-semibold)'
+                                {(() => {
+                                    const socialLinks = normalizeSocialLinks(viewedUserData.socialLinks);
+                                    return (socialLinks.linkedin || socialLinks.github) && (
+                                        <div className="info-section" style={{ 
+                                            marginBottom: 'var(--spacing-lg)',
+                                            padding: 'var(--spacing-lg)',
+                                            backgroundColor: 'var(--bg-secondary)',
+                                            borderRadius: 'var(--border-radius-lg)',
+                                            border: '1px solid var(--border-color)'
                                         }}>
-                                            🌐 Social Links
-                                        </h3>
-                                        <div className="social-links" style={{ 
-                                            display: 'flex',
-                                            flexDirection: 'column',
-                                            gap: 'var(--spacing-sm)'
-                                        }}>
-                                            {viewedUserData.socialLinks.linkedin && (
-                                                <a 
-                                                    href={viewedUserData.socialLinks.linkedin} 
-                                                    target="_blank" 
-                                                    rel="noopener noreferrer" 
-                                                    className="social-link linkedin"
+                                            <h3 style={{ 
+                                                marginBottom: 'var(--spacing-md)',
+                                                color: 'var(--text-primary)',
+                                                fontSize: 'var(--font-size-lg)',
+                                                fontWeight: 'var(--font-weight-semibold)'
+                                            }}>
+                                                🌐 Social Links
+                                            </h3>
+                                            <div className="social-links" style={{ 
+                                                display: 'flex',
+                                                flexDirection: 'column',
+                                                gap: 'var(--spacing-sm)'
+                                            }}>
+                                                {socialLinks.linkedin && (
+                                                    <a 
+                                                        href={socialLinks.linkedin} 
+                                                        target="_blank" 
+                                                        rel="noopener noreferrer" 
+                                                        className="social-link linkedin"
                                                     style={{
                                                         display: 'inline-flex',
                                                         alignItems: 'center',
@@ -549,9 +660,9 @@ export default function ProfilePage({ currentUserData, onProfileUpdate }) {
                                                     💼 LinkedIn
                                                 </a>
                                             )}
-                                            {viewedUserData.socialLinks.github && (
+                                            {socialLinks.github && (
                                                 <a 
-                                                    href={viewedUserData.socialLinks.github} 
+                                                    href={socialLinks.github} 
                                                     target="_blank" 
                                                     rel="noopener noreferrer" 
                                                     className="social-link github"
@@ -574,7 +685,8 @@ export default function ProfilePage({ currentUserData, onProfileUpdate }) {
                                             )}
                                         </div>
                                     </div>
-                                )}
+                                    );
+                                })()}
                             </div>
                         </div>
                     </div>

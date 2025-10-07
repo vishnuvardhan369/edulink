@@ -111,7 +111,7 @@ export default function CreatePost({ onPostCreated }) {
                         placeholder="What's on your mind? Share your thoughts, insights, or updates..."
                         rows="4"
                         className="form-control textarea"
-                        style={{ resize: 'vertical', minHeight: '100px' }}
+                        style={{ resize: 'vertical', minHeight: '100px', color: 'var(--text-primary)', backgroundColor: 'var(--bg-primary)' }}
                     />
                 </div>
                 
